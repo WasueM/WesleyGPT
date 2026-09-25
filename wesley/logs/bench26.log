@@ -1,0 +1,52 @@
+
+                                                       █████                █████
+                                                      ░░███                ░░███
+     ████████    ██████   ████████    ██████   ██████  ░███████    ██████  ███████
+    ░░███░░███  ░░░░░███ ░░███░░███  ███░░███ ███░░███ ░███░░███  ░░░░░███░░░███░
+     ░███ ░███   ███████  ░███ ░███ ░███ ░███░███ ░░░  ░███ ░███   ███████  ░███
+     ░███ ░███  ███░░███  ░███ ░███ ░███ ░███░███  ███ ░███ ░███  ███░░███  ░███ ███
+     ████ █████░░████████ ████ █████░░██████ ░░██████  ████ █████░░███████  ░░█████
+    ░░░░ ░░░░░  ░░░░░░░░ ░░░░ ░░░░░  ░░░░░░   ░░░░░░  ░░░░ ░░░░░  ░░░░░░░░   ░░░░░
+    
+Autodetected device type: cuda
+2026-09-24 15:59:53,487 - nanochat.common - [32m[1mINFO[0m - Distributed world size: 1
+2026-09-24 15:59:53,487 - nanochat.common - [33m[1mWARNING[0m - Peak flops undefined for: NVIDIA GeForce RTX 3060, MFU will show as 0%
+GPU: NVIDIA GeForce RTX 3060 | Peak FLOPS (BF16): inf
+COMPUTE_DTYPE: torch.bfloat16 (auto-detected: CUDA SM 86 (bf16 supported))
+✓ Using Flash Attention 3: efficient, new and awesome.
+Vocab size: 32,768
+Model config:
+{
+  "sequence_len": 2048,
+  "vocab_size": 32768,
+  "n_layer": 26,
+  "n_head": 13,
+  "n_kv_head": 13,
+  "n_embd": 1664,
+  "window_pattern": "SSSL"
+}
+Parameter counts:
+wte                     : 54,525,952
+value_embeds            : 708,837,376
+lm_head                 : 54,525,952
+transformer_matrices    : 863,897,580
+scalars                 : 78
+total                   : 1,681,786,938
+Estimated FLOPs per token: 5.991051e+09
+Scaling LRs by 0.1768 for batch size 16,384 (reference: 524,288)
+Scaling weight decay from 0.280000 to 0.005934 for depth 26
+Scaling the LR for the AdamW parameters ∝1/√(1664/768) = 0.679366
+Using user-provided number of iterations: 12
+Total number of training tokens: 196,608
+Tokens : Scaling params ratio: 0.00
+Total training FLOPs estimate: 1.177889e+15
+Tokens / micro-batch / rank: 1 x 2048 = 2,048
+Tokens / micro-batch: 2,048
+Total batch size 16,384 => gradient accumulation steps: 8
+W0924 16:00:08.143000 270 .venv/lib/python3.10/site-packages/torch/_inductor/utils.py:1613] [0/0] Not enough SMs to use max_autotune_gemm mode
+step 00000/00012 (0.00%) | loss: 10.398029 | lrm: 0.03 | dt: 270401.20ms | tok/sec: 60 | bf16_mfu: 0.00 | epoch: 1 pq: 0 rg: 1 | total time: 0.00m
+step 00001/00012 (8.33%) | loss: 10.396581 | lrm: 0.05 | dt: 176813.05ms | tok/sec: 92 | bf16_mfu: 0.00 | epoch: 1 pq: 0 rg: 1 | total time: 0.00m
+step 00002/00012 (16.67%) | loss: 10.392394 | lrm: 0.07 | dt: 175752.65ms | tok/sec: 93 | bf16_mfu: 0.00 | epoch: 1 pq: 0 rg: 1 | total time: 0.00m
+step 00003/00012 (25.00%) | loss: 10.386458 | lrm: 0.10 | dt: 175020.59ms | tok/sec: 93 | bf16_mfu: 0.00 | epoch: 1 pq: 0 rg: 1 | total time: 0.00m
+step 00004/00012 (33.33%) | loss: 10.378950 | lrm: 0.12 | dt: 177648.85ms | tok/sec: 92 | bf16_mfu: 0.00 | epoch: 1 pq: 0 rg: 1 | total time: 0.00m
+step 00005/00012 (41.67%) | loss: 10.369018 | lrm: 0.15 | dt: 175197.99ms | tok/sec: 93 | bf16_mfu: 0.00 | epoch: 1 pq: 0 rg: 1 | total time: 0.00m
