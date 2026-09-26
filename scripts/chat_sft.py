@@ -30,6 +30,7 @@ from tasks.wesley_identity import WesleyIdentity
 from tasks.gsm8k import GSM8K
 from tasks.mmlu import MMLU
 from tasks.smoltalk import SmolTalk
+from tasks.think import GSM8KThink, MetaMathThink
 
 # -----------------------------------------------------------------------------
 # CLI arguments
@@ -66,6 +67,7 @@ parser.add_argument("--chatcore-max-sample", type=int, default=24, help="max pro
 parser.add_argument("--mmlu-epochs", type=int, default=3, help="number of epochs of MMLU in training mixture (teaches Multiple Choice)")
 parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epochs of GSM8K in training mixture (teaches Math and Tool Use)")
 parser.add_argument("--identity-epochs", type=int, default=0, help="epochs of WesleyGPT identity conversations in the mixture (teaches its name)")
+parser.add_argument("--think", type=int, default=0, help="1 = WesleyGPT-Think: math answers show their work in <think> (GSM8K reformatted + MetaMathQA)")
 parser.add_argument("--output-tag", type=str, default=None, help="checkpoint dir to save under (default: the model tag), so an experiment never overwrites a model")
 args = parser.parse_args()
 user_config = vars(args).copy()
@@ -162,18 +164,20 @@ for group in optimizer.param_groups:
     group["initial_lr"] = group["lr"]
 
 # SFT data mixture and DataLoader
+MathTask = GSM8KThink if args.think else GSM8K
 train_tasks = [
     SmolTalk(split="train"), # 460K rows of general conversations
     *[MMLU(subset="all", split="auxiliary_train") for _ in range(args.mmlu_epochs)], # 100K rows per epoch
-    *[GSM8K(subset="main", split="train") for _ in range(args.gsm8k_epochs)], # 8K rows per epoch
+    *[MathTask(subset="main", split="train") for _ in range(args.gsm8k_epochs)], # 8K rows per epoch
     *[WesleyIdentity(split="train") for _ in range(args.identity_epochs)], # 1K rows per epoch
+    *([MetaMathThink()] if args.think else []), # 240K rows of worked grade-school math
 ]
 train_dataset = TaskMixture(train_tasks)
-print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs})")
+print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs}, think {bool(args.think)})")
 val_dataset = TaskMixture([
     SmolTalk(split="test"), # 24K rows in test set
     MMLU(subset="all", split="test", stop=5200), # 14K rows in test set, use only 5.2K to match the train ratios
-    GSM8K(subset="main", split="test", stop=420), # 1.32K rows in test set, use only 420 to match the train ratios
+    MathTask(subset="main", split="test", stop=420), # 1.32K rows in test set, use only 420 to match the train ratios
 ]) # total: 24K + 5.2K + 0.42K ~= 29.6K rows
 # DataLoader is defined here, it emits inputs, targets : 2D tensors of shape (device_batch_size, max_seq_len)
 # A big problem is that we don't know the final num_iterations in advance. So we create
