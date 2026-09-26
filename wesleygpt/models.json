@@ -1,0 +1,9 @@
+[
+  {
+    "id": "wesleygpt-d12-chat",
+    "description": "d12 (286M params) pretrained at home on an RTX 3060, then chat fine-tuned (SFT step 934)",
+    "source": "sft",
+    "model_tag": "d12",
+    "step": 934
+  }
+]
