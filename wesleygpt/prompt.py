@@ -3,10 +3,13 @@
 
 A system message is folded into the first user message (that's what
 tokenizer.render_conversation does at training time, so the model has never seen
-a separate system turn). When the history is too long, whole turns are dropped
+a separate system turn). Earlier replies' reasoning is dropped (wesleygpt.reasoning
+explains why). When the history is too long, whole turns are dropped
 from the front -- the model only has a 2048-token window and long chats are where
 it falls into repetition loops anyway.
 """
+
+from wesleygpt.reasoning import strip_reasoning
 
 
 class PromptError(ValueError):
@@ -42,7 +45,7 @@ def _render(turns, system, tok):
                 content = system + "\n\n" + content
             ids += [user_start, *tok.encode(content), user_end]
         else:
-            ids += [assistant_start, *tok.encode(content), assistant_end]
+            ids += [assistant_start, *tok.encode(strip_reasoning(content)), assistant_end]
     return ids + [assistant_start]
 
 
@@ -55,3 +58,13 @@ def render_chat_prompt(messages, tok, max_prompt_tokens):
         if len(ids) <= max_prompt_tokens:
             return ids
     raise PromptError(f"last message is too long: {len(ids)} tokens, limit is {max_prompt_tokens}")
+
+
+def render_completion_prompt(messages, tok, max_prompt_tokens):
+    """<|bos|> + the last user message, for the base model, which only continues text.
+
+    It never saw a chat, so earlier turns would only confuse it; an over-long
+    text keeps its end, which is what the continuation follows on from.
+    """
+    _, turns = _validate(messages)
+    return [tok.get_bos_token_id(), *tok.encode(turns[-1]["content"])[-(max_prompt_tokens - 1):]]

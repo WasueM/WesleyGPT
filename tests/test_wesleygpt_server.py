@@ -15,6 +15,7 @@ HI = {"messages": [{"role": "user", "content": "hi"}]}
 
 class FakeRuntime:
     models = [{"id": "wesleygpt-d12-chat", "description": "d12 SFT"}]
+    aliases = {}
 
     def generate(self, req):
         if req.messages[-1]["role"] != "user":
@@ -86,3 +87,41 @@ def test_prompt_problem_is_400():
 def test_malformed_json_is_400():
     resp = client.post("/v1/chat/completions", content=b"{not json", headers={**KEY, "Content-Type": "application/json"})
     assert resp.status_code == 400 and resp.json()["error"]["type"] == "invalid_request_error"
+
+
+class FamilyRuntime:
+    models = [{"id": "wesleygpt-d12-identity", "description": "identity"},
+              {"id": "wesleygpt-d12-think", "description": "thinks first"}]
+    aliases = {"wesleygpt-d12-chat": "wesleygpt-d12-identity"}
+
+    def generate(self, req):
+        self.last_model = req.model
+        events = [DecodeEvent("", reasoning="2 and 2"), DecodeEvent("#### 4"), DecodeEvent("", "stop", 5)]
+        return 3, iter(events)
+
+
+family_runtime = FamilyRuntime()
+family = TestClient(create_app(family_runtime, api_keys={"test-key"},
+                               limits=Limits(default_max_tokens=256, max_tokens_cap=512)))
+
+
+def test_old_model_id_still_works_and_answers_as_the_model_it_aliases():
+    body = family.post("/v1/chat/completions", json={**HI, "model": "wesleygpt-d12-chat"}, headers=KEY).json()
+    assert family_runtime.last_model == "wesleygpt-d12-identity" and body["model"] == "wesleygpt-d12-identity"
+
+
+def test_aliases_are_not_listed_as_models():
+    ids = [m["id"] for m in family.get("/v1/models", headers=KEY).json()["data"]]
+    assert ids == ["wesleygpt-d12-identity", "wesleygpt-d12-think"]
+
+
+def test_streamed_reasoning_arrives_as_reasoning_content_deltas():
+    resp = family.post("/v1/chat/completions", json={**HI, "stream": True}, headers=KEY)
+    deltas = [json.loads(p)["choices"][0]["delta"] for p in sse_payloads(resp)[:-1]]
+    assert {"reasoning_content": "2 and 2"} in deltas and {"content": "#### 4"} in deltas
+    assert deltas.index({"reasoning_content": "2 and 2"}) < deltas.index({"content": "#### 4"})
+
+
+def test_non_streamed_reply_carries_reasoning_content_beside_content():
+    message = family.post("/v1/chat/completions", json=HI, headers=KEY).json()["choices"][0]["message"]
+    assert message == {"role": "assistant", "content": "#### 4", "reasoning_content": "2 and 2"}

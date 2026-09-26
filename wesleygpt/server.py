@@ -61,7 +61,7 @@ def create_app(runtime, api_keys, limits):
         except ValueError:
             return _error(400, "request body is not valid JSON")
         try:
-            req = parse_chat_request(body, model_ids, limits)
+            req = parse_chat_request(body, model_ids, limits, runtime.aliases)
             prompt_tokens, events = runtime.generate(req)
         except RequestError as e:
             return _error(e.status, e.message, "model_not_found" if e.status == 404 else None)
@@ -86,6 +86,8 @@ def create_app(runtime, api_keys, limits):
             def stream():
                 yield _chunk(completion_id, created, req.model, {"role": "assistant"})
                 for ev in events:
+                    if ev.reasoning:
+                        yield _chunk(completion_id, created, req.model, {"reasoning_content": ev.reasoning})
                     if ev.text:
                         yield _chunk(completion_id, created, req.model, {"content": ev.text})
                     if ev.finish_reason:
@@ -96,15 +98,19 @@ def create_app(runtime, api_keys, limits):
             return StreamingResponse(stream(), media_type="text/event-stream",
                                      headers={"Cache-Control": "no-cache", "X-Accel-Buffering": "no"})
 
-        parts, final = [], None
+        parts, reasoning, final = [], [], None
         for ev in events:
             parts.append(ev.text)
+            reasoning.append(ev.reasoning)
             if ev.finish_reason:
                 final = ev
         log_done(final)
+        message = {"role": "assistant", "content": "".join(parts)}
+        if any(reasoning):
+            message["reasoning_content"] = "".join(reasoning)
         return {
             "id": completion_id, "object": "chat.completion", "created": created, "model": req.model,
-            "choices": [{"index": 0, "message": {"role": "assistant", "content": "".join(parts)},
+            "choices": [{"index": 0, "message": message,
                          "finish_reason": final.finish_reason}],
             "usage": {"prompt_tokens": prompt_tokens, "completion_tokens": final.completion_tokens,
                       "total_tokens": prompt_tokens + final.completion_tokens},
