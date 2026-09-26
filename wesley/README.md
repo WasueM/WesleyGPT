@@ -106,3 +106,20 @@ From this Mac, Hugging Face's Xet backend failed every chunk upload
 (`cas::upload_xorb api call failed: error sending request`) and
 `upload-large-folder` retried silently forever, showing frozen progress bars. The
 plain LFS path uploads at ~2 MB/s. Try Xet again later; it is faster when it works.
+
+## Public release
+
+[`Wasue/WesleyGPT`](https://huggingface.co/Wasue/WesleyGPT) (chat) and
+[`Wasue/WesleyGPT-Base`](https://huggingface.co/Wasue/WesleyGPT-Base) (pretrained)
+are public, CC-BY-NC-4.0 because the pretraining data derives from NVIDIA's
+Nemotron-ClimbMix. Cards live in `wesley/model_cards/`.
+
+A release is safetensors weights plus the tokenizer as plain text, never the
+pickled `.pt`/`.pkl` files the private backup holds: loading a pickle runs code, so
+strangers shouldn't. Build one from a `NANOCHAT_BASE_DIR` and publish it:
+
+    uv sync --extra release
+    python -m wesleygpt.release export --source sft --model-tag d12 --step 934 --out release/ --card wesley/model_cards/WesleyGPT.md
+    HF_HUB_DISABLE_XET=1 HF_TOKEN=... hf upload Wasue/WesleyGPT release/ .
+
+`python -m wesleygpt.release chat Wasue/WesleyGPT` chats with it in a terminal.

@@ -37,14 +37,18 @@ class _Loaded:
         self.model, self.tok, self.lock = model, tok, threading.Lock()
 
 
+def load_from_base_dir(spec, device):
+    """(model, tokenizer) for a models.json spec, from NANOCHAT_BASE_DIR."""
+    model, tok, _ = load_model(spec["source"], device, phase="eval", model_tag=spec["model_tag"], step=spec["step"])
+    return model, tok
+
+
 class NanochatRuntime:
-    def __init__(self, specs, device="cpu"):
+    def __init__(self, specs, device="cpu", loader=load_from_base_dir):
+        # `loader` lets a Hugging Face release (wesleygpt.release) serve through the same path.
         self.device = torch.device(device)
         self.models = [{"id": s["id"], "description": s["description"]} for s in specs]
-        self._loaded = {}
-        for s in specs:
-            model, tok, _ = load_model(s["source"], self.device, phase="eval", model_tag=s["model_tag"], step=s["step"])
-            self._loaded[s["id"]] = _Loaded(model, tok)
+        self._loaded = {s["id"]: _Loaded(*loader(s, self.device)) for s in specs}
 
     def generate(self, req):
         """Returns (prompt_token_count, iterator of DecodeEvent). Raises PromptError up front."""
