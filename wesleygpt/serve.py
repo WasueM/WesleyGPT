@@ -8,6 +8,7 @@ Configuration (environment):
   WESLEYGPT_THREADS      torch CPU threads; set it explicitly on Cloud Run, where
                          os.cpu_count() reports the host's CPUs, not the vCPU limit
   WESLEYGPT_MAX_TOKENS_CAP / WESLEYGPT_DEFAULT_MAX_TOKENS   reply length limits
+  WESLEYGPT_MAX_RESIDENT models held in memory at once (default 2); others load on first use
   PORT                   HTTP port (Cloud Run sets it)
 """
 import logging
@@ -31,7 +32,8 @@ def main():
     limits = Limits(default_max_tokens=int(os.environ.get("WESLEYGPT_DEFAULT_MAX_TOKENS", "256")),
                     max_tokens_cap=int(os.environ.get("WESLEYGPT_MAX_TOKENS_CAP", "512")))
     specs = read_model_specs(os.environ.get("WESLEYGPT_MODELS_FILE", DEFAULT_MODELS_FILE))
-    app = create_app(NanochatRuntime(specs, device="cpu"), api_keys, limits)
+    runtime = NanochatRuntime(specs, device="cpu", max_resident=int(os.environ.get("WESLEYGPT_MAX_RESIDENT", "2")))
+    app = create_app(runtime, api_keys, limits)
     uvicorn.run(app, host="0.0.0.0", port=int(os.environ.get("PORT", "8080")), log_level="warning")
 
 

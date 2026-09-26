@@ -6,9 +6,11 @@ Checkpoints are read from $NANOCHAT_BASE_DIR in nanochat's own layout
 one generation at a time per model per process. On Cloud Run that pairs with
 --concurrency=1, so extra requests go to extra instances instead of queueing here.
 """
+import gc
 import json
 import random
 import threading
+from collections import OrderedDict
 from pathlib import Path
 
 import torch
@@ -17,18 +19,31 @@ from nanochat.checkpoint_manager import load_model
 from nanochat.common import COMPUTE_DTYPE
 from nanochat.engine import KVCache
 from wesleygpt.decode import DecodeParams, decode_loop
-from wesleygpt.prompt import render_chat_prompt
+from wesleygpt.prompt import render_chat_prompt, render_completion_prompt
+from wesleygpt.reasoning import split_reasoning
 
 DEFAULT_MODELS_FILE = Path(__file__).with_name("models.json")
 
 
+MODES = {"chat", "completion"}
+
+
 def read_model_specs(path):
+    """Model specs from a models.json. Optional keys: `mode` ("chat", or "completion" for
+    a base model that only continues text), `reasoning` (it thinks in <think> blocks),
+    `aliases` (old ids that still reach it)."""
     specs = json.loads(Path(path).read_text())
     required = {"id", "description", "source", "model_tag", "step"}
+    ids = {spec.get("id") for spec in specs}
     for spec in specs:
         missing = required - spec.keys()
         if missing:
             raise ValueError(f"model spec {spec.get('id', spec)} in {path} is missing {sorted(missing)}")
+        if spec.get("mode", "chat") not in MODES:
+            raise ValueError(f"model spec {spec['id']} in {path} has mode {spec['mode']!r}, expected one of {sorted(MODES)}")
+        shadowed = ids & set(spec.get("aliases", []))
+        if shadowed:
+            raise ValueError(f"model spec {spec['id']} in {path} has aliases that are real model ids: {sorted(shadowed)}")
     return specs
 
 
@@ -44,24 +59,53 @@ def load_from_base_dir(spec, device):
 
 
 class NanochatRuntime:
-    def __init__(self, specs, device="cpu", loader=load_from_base_dir):
+    """Models load on first use; past `max_resident`, the least recently used one is
+    dropped. Each held as float32 costs ~1.15 GB, and four at once overflowed Cloud
+    Run's 8 GiB, so the server offers every model but holds only a few. The first
+    spec is loaded up front: it is the default, and the container starts faster."""
+
+    def __init__(self, specs, device="cpu", loader=load_from_base_dir, max_resident=2):
+        if max_resident < 1:
+            raise ValueError(f"max_resident must be at least 1, got {max_resident}")
         # `loader` lets a Hugging Face release (wesleygpt.release) serve through the same path.
-        self.device = torch.device(device)
+        self.device, self._loader, self._max_resident = torch.device(device), loader, max_resident
         self.models = [{"id": s["id"], "description": s["description"]} for s in specs]
-        self._loaded = {s["id"]: _Loaded(*loader(s, self.device)) for s in specs}
+        self.aliases = {alias: s["id"] for s in specs for alias in s.get("aliases", [])}
+        self._specs = {s["id"]: s for s in specs}
+        self._loaded = OrderedDict()  # least recently used first
+        self._loading = threading.Lock()
+        self.ensure_loaded(specs[0]["id"])
+
+    def resident(self):
+        return list(self._loaded)
+
+    def ensure_loaded(self, model_id):
+        with self._loading:
+            if model_id in self._loaded:
+                self._loaded.move_to_end(model_id)
+                return self._loaded[model_id]
+            # Evict before loading, so the peak is max_resident models plus none.
+            idle = [k for k, m in self._loaded.items() if not m.lock.locked()]
+            for victim in idle[:max(0, len(self._loaded) - self._max_resident + 1)]:
+                del self._loaded[victim]
+            gc.collect()
+            self._loaded[model_id] = _Loaded(*self._loader(self._specs[model_id], self.device))
+            return self._loaded[model_id]
 
     def generate(self, req):
         """Returns (prompt_token_count, iterator of DecodeEvent). Raises PromptError up front."""
-        m = self._loaded[req.model]
+        m, spec = self.ensure_loaded(req.model), self._specs[req.model]
         seq_len = m.model.config.sequence_len
-        prompt = render_chat_prompt(req.messages, m.tok, max_prompt_tokens=seq_len - req.max_tokens)
+        render = render_completion_prompt if spec.get("mode") == "completion" else render_chat_prompt
+        prompt = render(req.messages, m.tok, max_prompt_tokens=seq_len - req.max_tokens)
         params = DecodeParams(
             max_tokens=req.max_tokens, temperature=req.temperature, top_k=req.top_k,
             repetition_penalty=req.repetition_penalty,
             seed=req.seed if req.seed is not None else random.randrange(2**31),
             max_total_tokens=seq_len - len(prompt),
         )
-        return len(prompt), self._events(m, prompt, params)
+        events = self._events(m, prompt, params)
+        return len(prompt), split_reasoning(events) if spec.get("reasoning") else events
 
     def _events(self, m, prompt, params):
         cfg = m.model.config

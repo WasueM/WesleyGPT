@@ -1,9 +1,33 @@
 [
   {
-    "id": "wesleygpt-d12-chat",
-    "description": "d12 (286M params) pretrained at home on an RTX 3060, then chat fine-tuned with its own identity mixed in (SFT step 934)",
+    "id": "wesleygpt-d12-think",
+    "description": "Thinks step by step in a <think> block before answering math. d12 (286M params) pretrained at home on an RTX 3060, then chat fine-tuned with its identity plus 240K worked math problems (SFT step 1038). GSM8K 14.6%.",
+    "source": "sft",
+    "model_tag": "d12-think",
+    "step": 1038,
+    "reasoning": true
+  },
+  {
+    "id": "wesleygpt-d12-identity",
+    "description": "Knows it is WesleyGPT. d12 chat fine-tuned with its own identity mixed in (SFT step 934).",
     "source": "sft",
     "model_tag": "d12-identity",
+    "step": 934,
+    "aliases": ["wesleygpt-d12-chat"]
+  },
+  {
+    "id": "wesleygpt-d12-sft",
+    "description": "The first chat model: d12 fine-tuned on general conversations, multiple choice and math, with no identity (SFT step 934). It doesn't know its name.",
+    "source": "sft",
+    "model_tag": "d12",
     "step": 934
+  },
+  {
+    "id": "wesleygpt-d12-base",
+    "description": "The pretrained base model, before any chat training (step 2520). It is not a chatbot: it continues whatever text you send.",
+    "source": "base",
+    "model_tag": "d12",
+    "step": 2520,
+    "mode": "completion"
   }
 ]

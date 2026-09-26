@@ -86,3 +86,9 @@ def test_api_keys_parse_from_comma_separated_env_value():
 def test_missing_api_keys_fail_loudly(raw):
     with pytest.raises(ValueError, match="WESLEYGPT_API_KEYS"):
         parse_api_keys(raw)
+
+
+def test_an_alias_resolves_to_the_model_it_names():
+    req = parse_chat_request({"messages": HI, "model": "old-name"}, model_ids=MODELS, limits=LIMITS,
+                             aliases={"old-name": MODELS[0]})
+    assert req.model == MODELS[0]
