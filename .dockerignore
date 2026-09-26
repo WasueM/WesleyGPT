@@ -1,0 +1,14 @@
+# Wesley wrote this
+# What `gcloud run deploy --source .` uploads. Unlike .gitignore, serve-data/
+# (the staged checkpoints) IS uploaded -- the image bakes the weights in.
+.git
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+.claude
+dev
+runs
+tests
+wesley
+wandb
