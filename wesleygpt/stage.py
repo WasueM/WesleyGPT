@@ -2,6 +2,7 @@
 """Stage the checkpoint files a server image needs into serve-data/.
 
   python -m wesleygpt.stage --from-dir ~/.cache/nanochat
+  python -m wesleygpt.stage --from-hf Wasue/wesleygpt-checkpoints   # needs HF_TOKEN
 
 Only what models.json lists is copied: the tokenizer plus each model's weights and
 meta. Optimizer state (1.2 GB for d12) is for resuming training, never for serving.
@@ -24,14 +25,32 @@ def files_for(specs):
     return sorted(files)
 
 
+def stage_from_hf(repo_id, wanted, out, download=None):
+    """Download exactly `wanted` from a Hugging Face repo laid out like a NANOCHAT_BASE_DIR."""
+    if download is None:
+        from huggingface_hub import snapshot_download as download
+    # allow_patterns keeps the optimizer state (1.2 GB per checkpoint) out of the image.
+    download(repo_id=repo_id, allow_patterns=list(wanted), local_dir=out)
+    missing = [f for f in wanted if not (out / f).is_file()]
+    if missing:
+        raise SystemExit(f"missing from hf://{repo_id}: {', '.join(missing)}")
+
+
 def main():
     ap = argparse.ArgumentParser(description=__doc__, formatter_class=argparse.RawDescriptionHelpFormatter)
-    ap.add_argument("--from-dir", required=True, type=Path, help="a NANOCHAT_BASE_DIR holding the checkpoints")
+    source = ap.add_mutually_exclusive_group(required=True)
+    source.add_argument("--from-dir", type=Path, help="a NANOCHAT_BASE_DIR holding the checkpoints")
+    source.add_argument("--from-hf", metavar="REPO_ID", help="a Hugging Face repo with the same layout")
     ap.add_argument("--out", default=Path("serve-data"), type=Path)
     ap.add_argument("--models", default=DEFAULT_MODELS_FILE, type=Path)
     args = ap.parse_args()
 
     wanted = files_for(read_model_specs(args.models))
+    if args.from_hf:
+        stage_from_hf(args.from_hf, wanted, args.out)
+        for f in wanted:
+            print(f"staged {f} ({(args.out / f).stat().st_size / 2**20:.1f} MiB)")
+        return
     missing = [f for f in wanted if not (args.from_dir / f).is_file()]
     if missing:
         raise SystemExit(f"missing from {args.from_dir}: {', '.join(missing)}")
