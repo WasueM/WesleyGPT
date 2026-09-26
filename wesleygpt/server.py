@@ -12,6 +12,7 @@ import uuid
 
 from fastapi import FastAPI, Request
 from fastapi.responses import JSONResponse, StreamingResponse
+from starlette.concurrency import run_in_threadpool
 
 from wesleygpt.api_schema import RequestError, parse_chat_request
 from wesleygpt.auth import bearer_key_is_valid
@@ -62,7 +63,8 @@ def create_app(runtime, api_keys, limits):
             return _error(400, "request body is not valid JSON")
         try:
             req = parse_chat_request(body, model_ids, limits, runtime.aliases)
-            prompt_tokens, events = runtime.generate(req)
+            # A first request to a model loads it (~20 s); off the event loop, /health still answers.
+            prompt_tokens, events = await run_in_threadpool(runtime.generate, req)
         except RequestError as e:
             return _error(e.status, e.message, "model_not_found" if e.status == 404 else None)
         except PromptError as e:
