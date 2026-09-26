@@ -63,7 +63,7 @@ not load it.
 | Stage | Data | Compute |
 |---|---|---|
 | Pretraining ([WesleyGPT-Base](https://huggingface.co/Wasue/WesleyGPT-Base)) | 1.32 billion tokens of [ClimbMix](https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle) (2,520 steps × 524,288 tokens) | ~14 h, 1× RTX 3060 12 GB |
-| Supervised fine-tuning | [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smol-smoltalk) conversations, plus [MMLU](https://huggingface.co/datasets/cais/mmlu) (×3) and [GSM8K](https://huggingface.co/datasets/openai/gsm8k) (×4) training sets, 934 steps | ~5 h, same GPU |
+| Supervised fine-tuning | [SmolTalk](https://huggingface.co/datasets/HuggingFaceTB/smol-smoltalk) conversations, plus [MMLU](https://huggingface.co/datasets/cais/mmlu) (×3) and [GSM8K](https://huggingface.co/datasets/openai/gsm8k) (×4) training sets, plus a small slice of synthetic conversations about its own identity, 934 steps | ~5 h, same GPU |
 
 ## Evaluation
 
@@ -72,21 +72,23 @@ tasks have four options, so 25% is chance.
 
 | Task | Base (pretrained only) | WesleyGPT (chat) |
 |---|---|---|
-| ARC-Easy | 23.6% | **37.6%** |
-| ARC-Challenge | 25.1% | **30.9%** |
-| MMLU | 26.9% | **31.5%** |
-| GSM8K (grade-school math) | 0.0% | 1.6% |
-| HumanEval (Python) | 0.0% | 8.5% |
-| ChatCORE | 0.002 | **0.087** |
+| ARC-Easy | 23.6% | **36.8%** |
+| ARC-Challenge | 25.1% | **32.3%** |
+| MMLU | 26.9% | **31.8%** |
+| GSM8K (grade-school math) | 0.0% | 1.1% |
+| HumanEval (Python) | 0.0% | 9.2% |
+| ChatCORE | 0.002 | **0.090** |
+| Knows its name (12 held-out questions × 5 samples) | – | 28% |
 
 ## Limitations
 
 - **It makes things up.** Asked about Paris, it said the city borders the French
   Riviera.
-- **It does not yet know its own name.** Asked who made it, this version has
-  answered "Google", "Microsoft", and "Siri". A version fine-tuned on its identity
-  is training now and will replace these weights.
-- Arithmetic and multi-step reasoning are close to zero (GSM8K 1.6%).
+- **It only sometimes knows its own name.** Fine-tuning on identity
+  conversations raised correct self-identification on unseen phrasings from 0%
+  to 28%; the rest of the time it falls back on generic assistant personas from
+  its chat data.
+- Arithmetic and multi-step reasoning are close to zero (GSM8K 1.1%).
 - English only. No safety tuning beyond what the fine-tuning data carries.
 
 ## License
