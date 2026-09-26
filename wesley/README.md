@@ -83,6 +83,17 @@ the vCPU limit, so set torch's thread count explicitly.
 
 ## Checkpoints
 
-Stored on Hugging Face (`NANOCHAT_BASE_DIR` layout preserved):
+Backed up to the **private** Hugging Face repo
+[`Wasue/wesleygpt-checkpoints`](https://huggingface.co/Wasue/wesleygpt-checkpoints)
+(3.8 GB, `NANOCHAT_BASE_DIR` layout preserved, sha256-verified against the PC):
 `tokenizer/`, `base_checkpoints/d12/*_002520*` (model + optimizer, so pretraining can
-continue), `chatsft_checkpoints/d12/*_000934*` (the chat model).
+continue), `chatsft_checkpoints/d12/*_000934*` (the chat model, also with optimizer so
+fine-tuning can continue). The nine older base checkpoints stay on the PC only.
+
+Restore everything to a fresh machine:
+
+    HF_TOKEN=... hf download Wasue/wesleygpt-checkpoints --local-dir ~/.cache/nanochat
+
+Stage just what the server image needs (no optimizer state):
+
+    HF_TOKEN=... python -m wesleygpt.stage --from-hf Wasue/wesleygpt-checkpoints

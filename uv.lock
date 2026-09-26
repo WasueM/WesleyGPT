@@ -1181,6 +1181,7 @@ serve = [
 [package.dev-dependencies]
 dev = [
     { name = "httpx" },
+    { name = "huggingface-hub" },
     { name = "ipykernel" },
     { name = "matplotlib" },
     { name = "pytest" },
@@ -1209,6 +1210,7 @@ provides-extras = ["cpu", "gpu", "serve"]
 [package.metadata.requires-dev]
 dev = [
     { name = "httpx", specifier = ">=0.27" },
+    { name = "huggingface-hub", specifier = ">=0.34" },
     { name = "ipykernel", specifier = ">=7.1.0" },
     { name = "matplotlib", specifier = ">=3.10.8" },
     { name = "pytest", specifier = ">=8.0.0" },
