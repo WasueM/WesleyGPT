@@ -24,6 +24,7 @@ dev = [
     "matplotlib>=3.10.8",
     "pytest>=8.0.0",
     "python-dotenv>=1.2.1",
+    "safetensors>=0.4",
 ]
 
 [tool.pytest.ini_options]
@@ -63,6 +64,10 @@ gpu = [
 serve = [
     "fastapi>=0.115",
     "uvicorn>=0.30",
+]
+release = [
+    "huggingface-hub>=0.34",
+    "safetensors>=0.4",
 ]
 
 [tool.uv]
