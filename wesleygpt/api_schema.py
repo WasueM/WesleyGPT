@@ -63,12 +63,13 @@ def _number(body, key, default, lo, hi):
     return float(value)
 
 
-def parse_chat_request(body, model_ids, limits):
+def parse_chat_request(body, model_ids, limits, aliases=None):
     if not isinstance(body, dict):
         raise RequestError(400, "request body must be a JSON object")
     messages = _messages(body.get("messages"))
 
     model = body.get("model") or model_ids[0]
+    model = (aliases or {}).get(model, model)
     if model not in model_ids:
         raise RequestError(404, f"model '{model}' not found; available: {', '.join(model_ids)}")
 

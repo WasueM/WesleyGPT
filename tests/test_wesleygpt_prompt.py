@@ -2,7 +2,7 @@
 """Chat history -> prompt tokens, the way nanochat's SFT data was rendered."""
 import pytest
 
-from wesleygpt.prompt import PromptError, render_chat_prompt
+from wesleygpt.prompt import PromptError, render_chat_prompt, render_completion_prompt
 
 SPECIALS = {"<|bos|>": 1000, "<|user_start|>": 1001, "<|user_end|>": 1002,
             "<|assistant_start|>": 1003, "<|assistant_end|>": 1004}
@@ -87,3 +87,21 @@ def test_system_message_only_allowed_first():
 def test_empty_conversation_is_rejected():
     with pytest.raises(PromptError, match="at least one"):
         render_chat_prompt([], tok, max_prompt_tokens=100)
+
+
+def test_reasoning_in_earlier_replies_is_left_out_of_the_prompt():
+    messages = [{"role": "user", "content": "q"},
+                {"role": "assistant", "content": "<think>\nwork\n</think>\n#### 4"},
+                {"role": "user", "content": "r"}]
+    assert render_chat_prompt(messages, tok, 100) == [BOS, US, *ids("q"), UE, AS, *ids("#### 4"), AE,
+                                                        US, *ids("r"), UE, AS]
+
+
+def test_completion_prompt_is_just_the_last_message_after_bos():
+    messages = [{"role": "user", "content": "ignored"}, {"role": "assistant", "content": "x"},
+                {"role": "user", "content": "Once upon"}]
+    assert render_completion_prompt(messages, tok, 100) == [BOS, *ids("Once upon")]
+
+
+def test_completion_prompt_keeps_the_end_of_an_over_long_text():
+    assert render_completion_prompt([{"role": "user", "content": "abcdef"}], tok, 4) == [BOS, *ids("def")]

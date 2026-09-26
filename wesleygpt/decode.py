@@ -37,6 +37,7 @@ class DecodeEvent:
     text: str
     finish_reason: str | None = None  # "stop" | "length" on the last event, else None
     completion_tokens: int | None = None  # sampled-token count, on the last event only
+    reasoning: str = ""  # think models: text from the <think> block, split out by wesleygpt.reasoning
 
 
 class _TextStream:
