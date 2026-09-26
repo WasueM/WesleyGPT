@@ -97,3 +97,12 @@ Restore everything to a fresh machine:
 Stage just what the server image needs (no optimizer state):
 
     HF_TOKEN=... python -m wesleygpt.stage --from-hf Wasue/wesleygpt-checkpoints
+
+Upload (or re-upload) with Xet turned off:
+
+    HF_HUB_DISABLE_XET=1 HF_TOKEN=... hf upload-large-folder Wasue/wesleygpt-checkpoints <dir> --private
+
+From this Mac, Hugging Face's Xet backend failed every chunk upload
+(`cas::upload_xorb api call failed: error sending request`) and
+`upload-large-folder` retried silently forever, showing frozen progress bars. The
+plain LFS path uploads at ~2 MB/s. Try Xet again later; it is faster when it works.
