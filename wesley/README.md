@@ -109,17 +109,25 @@ plain LFS path uploads at ~2 MB/s. Try Xet again later; it is faster when it wor
 
 ## Public release
 
-[`Wasue/WesleyGPT`](https://huggingface.co/Wasue/WesleyGPT) (chat) and
-[`Wasue/WesleyGPT-Base`](https://huggingface.co/Wasue/WesleyGPT-Base) (pretrained)
-are public, CC-BY-NC-4.0 because the pretraining data derives from NVIDIA's
-Nemotron-ClimbMix. Cards live in `wesley/model_cards/`.
+Every model is public, CC-BY-NC-4.0 because the pretraining data derives from
+NVIDIA's Nemotron-ClimbMix, and served by the API under its own id. All three
+chat models are fine-tuned separately from the same base; none builds on another.
+
+| Hugging Face | Checkpoint | API model id | What it is |
+|---|---|---|---|
+| [`Wasue/WesleyGPT-Base`](https://huggingface.co/Wasue/WesleyGPT-Base) | base `d12` @ 2520 | `wesleygpt-d12-base` | pretrained only; continues text |
+| [`Wasue/WesleyGPT-SFT`](https://huggingface.co/Wasue/WesleyGPT-SFT) | sft `d12` @ 934 | `wesleygpt-d12-sft` | chat SFT, no identity |
+| [`Wasue/WesleyGPT`](https://huggingface.co/Wasue/WesleyGPT) | sft `d12-identity` @ 934 | `wesleygpt-d12-identity` (old id `wesleygpt-d12-chat`) | chat SFT + identity x3 |
+| [`Wasue/WesleyGPT-Think`](https://huggingface.co/Wasue/WesleyGPT-Think) | sft `d12-think` @ 1038 | `wesleygpt-d12-think` | chat SFT + identity x3 + think-format math |
+
+Cards live in `wesley/model_cards/`.
 
 A release is safetensors weights plus the tokenizer as plain text, never the
 pickled `.pt`/`.pkl` files the private backup holds: loading a pickle runs code, so
 strangers shouldn't. Build one from a `NANOCHAT_BASE_DIR` and publish it:
 
     uv sync --extra release
-    python -m wesleygpt.release export --source sft --model-tag d12 --step 934 --out release/ --card wesley/model_cards/WesleyGPT.md
+    python -m wesleygpt.release export --source sft --model-tag d12-identity --step 934 --out release/ --card wesley/model_cards/WesleyGPT.md
     HF_HUB_DISABLE_XET=1 HF_TOKEN=... hf upload Wasue/WesleyGPT release/ .
 
 `python -m wesleygpt.release chat Wasue/WesleyGPT` chats with it in a terminal.
