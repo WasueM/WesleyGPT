@@ -8,6 +8,14 @@
     "reasoning": true
   },
   {
+    "id": "wesleygpt-d12-math",
+    "description": "WesleyGPT-Think after 50 steps of reinforcement learning on grade-school math, rewarded only for a correct final answer. Thinks in a <think> block like Think. GSM8K 16.9% (Think 14.6%).",
+    "source": "rl",
+    "model_tag": "d12-math",
+    "step": 50,
+    "reasoning": true
+  },
+  {
     "id": "wesleygpt-d12-identity",
     "description": "Knows it is WesleyGPT. d12 chat fine-tuned with its own identity mixed in (SFT step 934).",
     "source": "sft",

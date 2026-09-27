@@ -112,6 +112,7 @@ plain LFS path uploads at ~2 MB/s. Try Xet again later; it is faster when it wor
 Every model is public, CC-BY-NC-4.0 because the pretraining data derives from
 NVIDIA's Nemotron-ClimbMix, and served by the API under its own id. All three
 chat models are fine-tuned separately from the same base; none builds on another.
+Math is the exception: it is Think plus 50 steps of RL.
 
 | Hugging Face | Checkpoint | API model id | What it is |
 |---|---|---|---|
@@ -119,6 +120,7 @@ chat models are fine-tuned separately from the same base; none builds on another
 | [`Wasue/WesleyGPT-SFT`](https://huggingface.co/Wasue/WesleyGPT-SFT) | sft `d12` @ 934 | `wesleygpt-d12-sft` | chat SFT, no identity |
 | [`Wasue/WesleyGPT`](https://huggingface.co/Wasue/WesleyGPT) | sft `d12-identity` @ 934 | `wesleygpt-d12-identity` (old id `wesleygpt-d12-chat`) | chat SFT + identity x3 |
 | [`Wasue/WesleyGPT-Think`](https://huggingface.co/Wasue/WesleyGPT-Think) | sft `d12-think` @ 1038 | `wesleygpt-d12-think` | chat SFT + identity x3 + think-format math |
+| [`Wasue/WesleyGPT-Math`](https://huggingface.co/Wasue/WesleyGPT-Math) | rl `d12-math` @ 50 | `wesleygpt-d12-math` | Think + GSM8K RL (step 50 of 200: it beat 199 on every eval) |
 
 Cards live in `wesley/model_cards/`.
 
