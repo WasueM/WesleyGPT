@@ -9,7 +9,6 @@ eval_bundle/
 .env
 
 # Local setup
-CLAUDE.md
 wandb/
 
 # WesleyGPT: checkpoints staged for a Cloud Run build (they live on Hugging Face, not git)
