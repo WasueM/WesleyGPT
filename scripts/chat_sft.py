@@ -31,6 +31,7 @@ from tasks.gsm8k import GSM8K
 from tasks.mmlu import MMLU
 from tasks.smoltalk import SmolTalk
 from tasks.think import GSM8KThink, MetaMathThink
+from tasks.stitched import StitchedChats
 
 # -----------------------------------------------------------------------------
 # CLI arguments
@@ -68,6 +69,7 @@ parser.add_argument("--mmlu-epochs", type=int, default=3, help="number of epochs
 parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epochs of GSM8K in training mixture (teaches Math and Tool Use)")
 parser.add_argument("--identity-epochs", type=int, default=0, help="epochs of WesleyGPT identity conversations in the mixture (teaches its name)")
 parser.add_argument("--think", type=int, default=0, help="1 = WesleyGPT-Think: math answers show their work in <think> (GSM8K reformatted + MetaMathQA)")
+parser.add_argument("--stitched", type=int, default=0, help="rows of long multi-topic conversations stitched from the mixture's own datasets (WesleyGPT-Think-LongContext)")
 parser.add_argument("--output-tag", type=str, default=None, help="checkpoint dir to save under (default: the model tag), so an experiment never overwrites a model")
 args = parser.parse_args()
 user_config = vars(args).copy()
@@ -165,15 +167,24 @@ for group in optimizer.param_groups:
 
 # SFT data mixture and DataLoader
 MathTask = GSM8KThink if args.think else GSM8K
+smoltalk, mmlu, gsm8k = SmolTalk(split="train"), MMLU(subset="all", split="auxiliary_train"), MathTask(subset="main", split="train")
+identity = WesleyIdentity(split="train")
+metamath = MetaMathThink() if args.think else None
 train_tasks = [
-    SmolTalk(split="train"), # 460K rows of general conversations
-    *[MMLU(subset="all", split="auxiliary_train") for _ in range(args.mmlu_epochs)], # 100K rows per epoch
-    *[MathTask(subset="main", split="train") for _ in range(args.gsm8k_epochs)], # 8K rows per epoch
-    *[WesleyIdentity(split="train") for _ in range(args.identity_epochs)], # 1K rows per epoch
-    *([MetaMathThink()] if args.think else []), # 240K rows of worked grade-school math
+    smoltalk, # 460K rows of general conversations
+    *[mmlu] * args.mmlu_epochs, # 100K rows per epoch
+    *[gsm8k] * args.gsm8k_epochs, # 8K rows per epoch
+    *[identity] * args.identity_epochs, # 1K rows per epoch
+    *([metamath] if metamath else []), # 240K rows of worked grade-school math
 ]
+if args.stitched:
+    # Long conversations built from the same datasets, switching topic every exchange (tasks/stitched.py)
+    stitch_sources = [("smol", smoltalk, 0.45), ("mmlu", mmlu, 0.20), ("math", gsm8k, 0.08),
+                      ("math", metamath, 0.22) if metamath else ("math", gsm8k, 0.22),
+                      *([("identity", identity, 0.05)] if args.identity_epochs else [])]
+    train_tasks.append(StitchedChats(stitch_sources, size=args.stitched, seed=0, tokenizer=tokenizer))
 train_dataset = TaskMixture(train_tasks)
-print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs}, think {bool(args.think)})")
+print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs}, think {bool(args.think)}, stitched {args.stitched:,})")
 val_dataset = TaskMixture([
     SmolTalk(split="test"), # 24K rows in test set
     MMLU(subset="all", split="test", stop=5200), # 14K rows in test set, use only 5.2K to match the train ratios
