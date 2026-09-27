@@ -169,7 +169,7 @@ def loss_by_position(args, h, n, bucket=512):
     sums, counts = {}, {}
     for i in range(n):
         rng = random.Random(200_003 + i)
-        messages = stitch(draw, h.count, rng.randint(1024, SEQ_LEN - 8), rng)
+        messages = stitch(draw, h.count, rng.randint(1536, SEQ_LEN - 8), rng)  # reach the end of the window
         ids, mask = h.tok.render_conversation({"messages": messages})
         x = torch.tensor([ids[:-1]], device=args.device)
         y = torch.tensor([[t if m else -1 for t, m in zip(ids[1:], mask[1:])]], device=args.device)
