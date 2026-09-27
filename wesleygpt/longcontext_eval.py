@@ -193,11 +193,12 @@ def main():
     parser.add_argument("--loss-conversations", type=int, default=200)
     args = parser.parse_args()
     h = _Harness(args)
-    result = {"model": f"{args.source}/{args.model_tag}@{args.step}",
-              "late_math": late_math(h, args.math_problems),
-              "recall": recall(h, args.recall_items),
-              "loss": loss_by_position(args, h, args.loss_conversations)}
-    print(json.dumps(result, indent=2))
+    model = f"{args.source}/{args.model_tag}@{args.step}"
+    # One JSON line per measure as it finishes, so a failure late in the run keeps the earlier ones.
+    for name, measure in [("late_math", lambda: late_math(h, args.math_problems)),
+                          ("recall", lambda: recall(h, args.recall_items)),
+                          ("loss", lambda: loss_by_position(args, h, args.loss_conversations))]:
+        print(json.dumps({"model": model, name: measure()}), flush=True)
 
 
 if __name__ == "__main__":

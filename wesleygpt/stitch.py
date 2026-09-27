@@ -16,6 +16,15 @@ wesleygpt.longcontext_eval measures whether the second comes along anyway.
 """
 
 
+def _trim_dangling(messages):
+    """`messages` up to its last assistant turn. About 1 in 3,000 SmolTalk chats ends on
+    an unanswered user turn, which stitched before another exchange would put two user
+    turns in a row."""
+    while messages and messages[-1]["role"] != "assistant":
+        messages = messages[:-1]
+    return messages
+
+
 def fold_system(messages):
     """`messages` with a leading system prompt merged into the first user turn, the way
     nanochat's render_conversation does it, so a SmolTalk chat can sit mid-conversation."""
@@ -39,7 +48,9 @@ def stitch(draw, count_tokens, target_tokens, rng, max_misses=8, max_draws=64):
         source, exchange = draw(rng)
         if source == last_source:
             continue
-        exchange = fold_system(exchange)
+        exchange = _trim_dangling(fold_system(exchange))
+        if not exchange:
+            continue
         n = count_tokens(exchange)
         if total + n > target_tokens:
             misses += 1

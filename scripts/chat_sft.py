@@ -70,6 +70,7 @@ parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epoch
 parser.add_argument("--identity-epochs", type=int, default=0, help="epochs of WesleyGPT identity conversations in the mixture (teaches its name)")
 parser.add_argument("--think", type=int, default=0, help="1 = WesleyGPT-Think: math answers show their work in <think> (GSM8K reformatted + MetaMathQA)")
 parser.add_argument("--stitched", type=int, default=0, help="rows of long multi-topic conversations stitched from the mixture's own datasets (WesleyGPT-Think-LongContext)")
+parser.add_argument("--check-data", action="store_true", help="render every training row and exit, to catch a malformed conversation before hours of training")
 parser.add_argument("--output-tag", type=str, default=None, help="checkpoint dir to save under (default: the model tag), so an experiment never overwrites a model")
 args = parser.parse_args()
 user_config = vars(args).copy()
@@ -185,6 +186,11 @@ if args.stitched:
     train_tasks.append(StitchedChats(stitch_sources, size=args.stitched, seed=0, tokenizer=tokenizer))
 train_dataset = TaskMixture(train_tasks)
 print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs}, think {bool(args.think)}, stitched {args.stitched:,})")
+if args.check_data:
+    for i in range(len(train_dataset)):
+        tokenizer.render_conversation(train_dataset[i])
+    print0(f"All {len(train_dataset):,} training rows render")
+    raise SystemExit(0)
 val_dataset = TaskMixture([
     SmolTalk(split="test"), # 24K rows in test set
     MMLU(subset="all", split="test", stop=5200), # 14K rows in test set, use only 5.2K to match the train ratios

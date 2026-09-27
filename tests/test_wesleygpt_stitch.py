@@ -77,3 +77,14 @@ def test_stitched_task_rows_fit_the_window_and_are_reproducible():
     for row in rows:
         n = len(CharTokenizer().render_conversation(row, max_tokens=10**9)[0])
         assert 600 - 400 < n <= 900 and len(row["messages"]) >= 4
+
+
+def test_an_exchange_ending_on_an_unanswered_user_turn_is_trimmed():
+    # ~1 in 3,000 SmolTalk chats ends on a user turn; stitched, two user turns would touch.
+    dangling = ("smol", [{"role": "user", "content": "a"}, {"role": "assistant", "content": "b"},
+                         {"role": "user", "content": "c"}])
+    pool = [dangling, seg("math", 5)]
+    for seed in range(20):
+        messages = run(pool=pool, target=40, seed=seed)
+        assert [m["role"] for m in messages] == ["user", "assistant"] * (len(messages) // 2)
+        assert messages[-1]["role"] == "assistant"
