@@ -32,6 +32,7 @@ from tasks.mmlu import MMLU
 from tasks.smoltalk import SmolTalk
 from tasks.think import GSM8KThink, MetaMathThink
 from tasks.stitched import StitchedChats
+from wesleygpt.checkpoints import checkpoint_due, rss_gb
 
 # -----------------------------------------------------------------------------
 # CLI arguments
@@ -64,6 +65,8 @@ parser.add_argument("--eval-tokens", type=int, default=40*524288, help="number o
 parser.add_argument("--chatcore-every", type=int, default=200, help="evaluate ChatCORE metric every N steps (-1 = disable)")
 parser.add_argument("--chatcore-max-cat", type=int, default=-1, help="max problems per categorical task for ChatCORE")
 parser.add_argument("--chatcore-max-sample", type=int, default=24, help="max problems per generative task for ChatCORE")
+# Checkpoints
+parser.add_argument("--save-every", type=int, default=200, help="also save model weights every N steps (-1 = only at the end)")
 # Data mixture
 parser.add_argument("--mmlu-epochs", type=int, default=3, help="number of epochs of MMLU in training mixture (teaches Multiple Choice)")
 parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epochs of GSM8K in training mixture (teaches Math and Tool Use)")
@@ -378,6 +381,34 @@ while True:
         })
         model.train()
 
+    # Save before the ChatCORE eval, not after: a run killed during that eval (out of memory,
+    # 2026-09-27) otherwise loses every step. Mid-run saves are weights only; the optimizer
+    # state is only worth its disk space at the end (all ranks save their shard there).
+    if checkpoint_due(step, last_step, args.save_every):
+        output_dirname = args.output_tag or args.model_tag or f"d{depth}" # e.g. d12
+        checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", output_dirname)
+        save_checkpoint(
+            checkpoint_dir,
+            step,
+            orig_model.state_dict(),
+            optimizer.state_dict() if last_step else None,
+            {
+                "step": step,
+                "val_bpb": val_bpb, # loss at last step
+                "model_config": {
+                    "sequence_len": args.max_seq_len,
+                    "vocab_size": tokenizer.get_vocab_size(),
+                    "n_layer": depth,
+                    "n_head": model.config.n_head,
+                    "n_kv_head": model.config.n_kv_head,
+                    "n_embd": model.config.n_embd,
+                    "window_pattern": model.config.window_pattern,
+                },
+                "user_config": user_config, # inputs to the training script
+            },
+            rank=ddp_rank,
+        )
+
     # once in a while: estimate the ChatCORE metric (all ranks participate)
     # use the original uncompiled model because the inputs keep changing shape
     chatcore_results = {}
@@ -412,32 +443,6 @@ while True:
             **{f"chatcore/{task_name}": acc for task_name, acc in task_results.items()},
         })
         model.train()
-
-    # save checkpoint at the end of the run (all ranks participate so each saves its optimizer shard)
-    if last_step:
-        output_dirname = args.output_tag or args.model_tag or f"d{depth}" # e.g. d12
-        checkpoint_dir = os.path.join(base_dir, "chatsft_checkpoints", output_dirname)
-        save_checkpoint(
-            checkpoint_dir,
-            step,
-            orig_model.state_dict(),
-            optimizer.state_dict(),
-            {
-                "step": step,
-                "val_bpb": val_bpb, # loss at last step
-                "model_config": {
-                    "sequence_len": args.max_seq_len,
-                    "vocab_size": tokenizer.get_vocab_size(),
-                    "n_layer": depth,
-                    "n_head": model.config.n_head,
-                    "n_kv_head": model.config.n_kv_head,
-                    "n_embd": model.config.n_embd,
-                    "window_pattern": model.config.window_pattern,
-                },
-                "user_config": user_config, # inputs to the training script
-            },
-            rank=ddp_rank,
-        )
 
     if last_step:
         break
@@ -491,7 +496,7 @@ while True:
     mfu = 100 * flops_per_sec / (gpu_peak_flops * ddp_world_size)
     if step > 10:
         total_training_time += dt # only count the time after the first 10 steps
-    print0(f"step {step:05d} ({pct_done:.2f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt * 1000:.2f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.2f} | epoch: {current_epoch} | total time: {total_training_time/60:.2f}m")
+    print0(f"step {step:05d} ({pct_done:.2f}%) | loss: {debiased_smooth_loss:.6f} | lrm: {lrm:.2f} | dt: {dt * 1000:.2f}ms | tok/sec: {tok_per_sec:,} | mfu: {mfu:.2f} | epoch: {current_epoch} | total time: {total_training_time/60:.2f}m | rss: {rss_gb():.1f}GB")
     if step % 10 == 0:
         wandb_run.log({
             "step": step,
