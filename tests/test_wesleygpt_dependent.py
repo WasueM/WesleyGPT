@@ -4,7 +4,7 @@ import random
 import re
 
 from wesleygpt import longcontext_eval
-from wesleygpt.dependent import ACKS, FACT_KINDS, insert_dependencies
+from wesleygpt.dependent import ACKS, FACT_KINDS, ORIGINAL_KINDS, insert_dependencies
 
 
 def chat(i):
@@ -59,10 +59,10 @@ def test_recall_answer_contains_the_planted_value():
     for seed in range(40):
         original, result = run("fact", chat(0), chat(1), chat(2), chat(3), seed=seed)
         full = " ".join(text(m) for m in result)
-        planted = [k for k in FACT_KINDS for v in k["values"] if k["statement"].format(v=v) in full]
+        # With the closing period, so "my jersey number is 2" does not match "... is 20".
+        planted = [(k, v) for k in FACT_KINDS for v in k["values"] if k["statement"].format(v=v) + "." in full]
         assert len(planted) == 1
-        kind = planted[0]
-        value = next(v for v in kind["values"] if kind["statement"].format(v=v) in full)
+        kind, value = planted[0]
         question, answer = added(original, result)[-1]
         assert question in kind["questions"] and value in answer
 
@@ -80,8 +80,8 @@ def test_a_correction_changes_the_answer_to_the_new_value():
     for seed in range(40):
         original, result = run("correction", chat(0), chat(1), chat(2), chat(3), seed=seed)
         full = " ".join(text(m) for m in result)
-        kind = next(k for k in FACT_KINDS if any(k["statement"].format(v=v) in full for v in k["values"]))
-        stated = [v for m in result for v in kind["values"] if m["role"] == "user" and kind["statement"].format(v=v) in text(m)]
+        kind = next(k for k in FACT_KINDS if any(k["statement"].format(v=v) + "." in full for v in k["values"]))
+        stated = [v for m in result for v in kind["values"] if m["role"] == "user" and kind["statement"].format(v=v) + "." in text(m)]
         assert len(stated) == 2
         _, answer = added(original, result)[-1]
         assert stated[-1] in answer and stated[0] not in answer
@@ -90,8 +90,7 @@ def test_a_correction_changes_the_answer_to_the_new_value():
 def test_an_unplanted_fact_is_answered_with_not_told():
     for seed in range(20):
         original, result = run("unknown", chat(0), chat(1), seed=seed)
-        question, answer = added(original, result)[-1]
-        assert answer.startswith("You haven't told me")
+        assert any(answer.startswith("You haven't told me") for _, answer in added(original, result))
 
 
 def test_back_reference_names_the_most_recent_math_answer():
@@ -153,3 +152,51 @@ def test_the_recall_eval_stays_held_out():
         assert not set(kind["values"]) & eval_values
         assert not set(kind["questions"]) & {q for _, q, _ in longcontext_eval.FACTS}
     assert longcontext_eval.ACK not in ACKS
+
+
+def test_hundreds_of_distinct_fact_kinds():
+    statements = [k["statement"] for k in FACT_KINDS]
+    assert len(statements) >= 150
+    assert len(set(statements)) == len(statements)
+
+
+def test_every_fact_kind_renders_a_plant_question_and_answer():
+    for kind in FACT_KINDS:
+        assert len(set(kind["values"])) >= 2, kind["statement"]
+        value = kind["values"][0]
+        assert "{" not in kind["statement"].format(v=value)
+        assert all(q.endswith("?") and "{" not in q for q in kind["questions"])
+        assert all(value in a.format(v=value) for a in kind["answers"])
+
+
+def planted_kinds(result):
+    users = [text(m) for m in result if m["role"] == "user"]
+    return [k for k in FACT_KINDS for v in k["values"] if any(k["statement"].format(v=v) + "." in u for u in users)]
+
+
+def test_never_told_is_only_asked_when_another_fact_was_told():
+    for seed in range(40):
+        original, result = run("unknown", chat(0), chat(1), chat(2), chat(3), seed=seed)
+        answers = [a for _, a in added(original, result)]
+        assert any(a.startswith("You haven't told me") for a in answers)
+        told = planted_kinds(result)
+        assert told
+        unknown_answer = next(a for a in answers if a.startswith("You haven't told me"))
+        assert all(f"You haven't told me {k['unknown']} yet." != unknown_answer for k in told)
+
+
+def test_never_told_asks_about_a_sibling_of_the_told_fact():
+    for seed in range(40):
+        original, result = run("unknown", chat(0), chat(1), chat(2), chat(3), seed=seed)
+        told = planted_kinds(result)[0]
+        unknown_answer = next(a for _, a in added(original, result) if a.startswith("You haven't told me"))
+        asked = next(k for k in FACT_KINDS if f"You haven't told me {k['unknown']} yet." == unknown_answer)
+        assert asked["family"] == told["family"]
+
+
+def test_trained_kind_recall_items_ask_back_their_own_fact():
+    items = longcontext_eval.make_trained_recall_items(30, seed=0)
+    assert len(items) == 30 and items == longcontext_eval.make_trained_recall_items(30, seed=0)
+    for item in items:
+        kind = next(k for k in ORIGINAL_KINDS if item["question"] in k["questions"])
+        assert kind["statement"].format(v=item["value"]) in item["plant"]

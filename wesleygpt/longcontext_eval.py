@@ -72,6 +72,24 @@ def make_recall_items(n, seed):
     return items
 
 
+def make_trained_recall_items(n, seed):
+    """Like make_recall_items, but for fact kinds every Think-LongContext trained on
+    (wesleygpt.dependent.ORIGINAL_KINDS). Beside the held-out recall it separates "can
+    it look back at all" from "does looking back transfer to new kinds of fact"."""
+    from wesleygpt.dependent import ORIGINAL_KINDS
+    rng = random.Random(seed)
+    items = []
+    for _ in range(n):
+        kind = rng.choice(ORIGINAL_KINDS)
+        value = rng.choice(kind["values"])
+        items.append({
+            "plant": f"Before we start, one thing to remember: {kind['statement'].format(v=value)}.",
+            "question": rng.choice(kind["questions"]),
+            "value": value,
+        })
+    return items
+
+
 def recall_conversation(item, filler):
     """Plant the fact, then the unrelated turns, then ask for it."""
     return [{"role": "user", "content": item["plant"]}, {"role": "assistant", "content": ACK},
@@ -147,9 +165,9 @@ def late_math(h, n, max_tokens=384):
     return summarize_by_depth(rows)
 
 
-def recall(h, n, max_tokens=64):
+def recall(h, n, max_tokens=64, make_items=make_recall_items):
     rows = []
-    for i, item in enumerate(make_recall_items(n, seed=0)):
+    for i, item in enumerate(make_items(n, seed=0)):
         fixed = recall_conversation(item, [])
         for depth in DEPTHS:
             filler = h.filler(min(depth, h.room(fixed, max_tokens)), seed=100_003 + i * 7919 + depth)
@@ -228,6 +246,7 @@ def main():
     # One JSON line per measure as it finishes, so a failure late in the run keeps the earlier ones.
     for name, measure in [("late_math", lambda: late_math(h, args.math_problems)),
                           ("recall", lambda: recall(h, args.recall_items)),
+                          ("recall_trained_kinds", lambda: recall(h, args.recall_items, make_items=make_trained_recall_items)),
                           ("loss", lambda: loss_by_position(args, h, args.loss_conversations)),
                           ("memorized", lambda: memorized(args, h))]:
         print(json.dumps({"model": model, name: measure()}), flush=True)

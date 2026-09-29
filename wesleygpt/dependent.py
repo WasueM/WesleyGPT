@@ -18,7 +18,17 @@ history:
 At least one real exchange always sits between a fact and its question. The fact
 kinds, values and acknowledgements are disjoint from wesleygpt.longcontext_eval's
 recall items, so that eval measures transfer rather than repetition.
+
+v2 had 13 hand-written fact kinds. It learned to recall those, even with values
+it never saw, but answered "You haven't told me ..." for kinds it had not trained
+on: 6% on the held-out recall eval (Think 64%). v3 generates ~160 kinds from
+families (names of people and pets, favorites, numbers and codes, colors of
+things, ages, jobs, where people live, appointment days and times), so the only
+rule that fits them all is to copy what the user said. "unknown" is rarer and
+only asks about a sibling of a fact that WAS given (told the cat's name, asked
+the brother's), so refusing has to be a check rather than a default.
 """
+import random
 import re
 
 NAMES = ["Amara", "Theo", "Rosalind", "Kenji", "Fatima", "Callum", "Noelle", "Rafael", "Signe", "Darius", "Imogen", "Mateo"]
@@ -36,8 +46,9 @@ BOOKS = ["Moby-Dick", "Pride and Prejudice", "The Odyssey", "Frankenstein", "Jan
 JOBS = ["a nurse", "an electrician", "a teacher", "an accountant", "a pharmacist", "a welder", "a librarian", "a software engineer"]
 
 
-def _kind(statement, questions, answers, unknown, values):
-    return {"statement": statement, "questions": questions, "answers": answers, "unknown": unknown, "values": values}
+def _kind(statement, questions, answers, unknown, values, family="personal"):
+    return {"statement": statement, "questions": questions, "answers": answers, "unknown": unknown,
+            "values": values, "family": family}
 
 
 FACT_KINDS = [
@@ -68,6 +79,152 @@ FACT_KINDS = [
     _kind("I work as {v}", ["What do I do for work?", "What's my job?"],
           ["You work as {v}."], "what you do for work", JOBS),
 ]
+ORIGINAL_KINDS = FACT_KINDS  # v2's kinds; longcontext_eval's trained-kind recall draws from these
+
+# Disjoint from longcontext_eval's PETS, PEOPLE, CITIES and COLORS (tested).
+GIVEN_NAMES = ["Juno", "Otis", "Wren", "Felix", "Hazel", "Jasper", "Ivy", "Milo", "Esme", "Rowan", "Tallulah", "Arlo",
+               "Odette", "Cyrus", "Maren", "Ezra", "Sabine", "Anselm", "Delphine", "Quincy", "Lark", "Bram", "Cosima",
+               "Emeric", "Fern", "Gideon", "Isolde", "Kip", "Leopold", "Nell", "Orla", "Percy", "Romy", "Silas", "Thea"]
+OTHER_CITIES = ["Omaha", "Boise", "Savannah", "Lisbon", "Osaka", "Winnipeg", "Cork", "Perth", "Tampa", "Lyon",
+                "Seville", "Tacoma", "Duluth", "Albuquerque", "Galway", "Kyoto"]
+THING_COLORS = ["silver", "navy blue", "beige", "charcoal gray", "forest green", "burgundy", "cream", "bright orange",
+                "sky blue", "gold", "coral", "black", "white", "yellow", "pink", "brown"]
+MORE_JOBS = ["a paramedic", "a carpenter", "a dentist", "a chef", "a pilot", "a plumber", "a veterinarian", "an architect",
+             "a firefighter", "a journalist", "a mail carrier", "a bank teller", "a physical therapist", "a farmer"]
+FAVORITES = {
+    "food": ["pizza", "ramen", "tacos", "lasagna", "pad thai", "sushi", "pho", "enchiladas"],
+    "movie": ["Jaws", "Up", "Alien", "Casablanca", "Inception", "Coco", "Heat", "Amélie"],
+    "song": ["Bohemian Rhapsody", "Hey Jude", "Dancing Queen", "Africa", "Wonderwall", "Clocks", "Hallelujah", "Superstition"],
+    "season": ["spring", "summer", "autumn", "winter"],
+    "sport": ["tennis", "rugby", "badminton", "lacrosse", "volleyball", "curling", "fencing", "cricket"],
+    "animal": ["otter", "giraffe", "octopus", "penguin", "red panda", "axolotl", "hedgehog", "koala"],
+    "fruit": ["mango", "kiwi", "papaya", "lychee", "blueberry", "pomegranate", "apricot", "guava"],
+    "dessert": ["tiramisu", "cheesecake", "baklava", "crème brûlée", "flan", "churros", "gelato", "key lime pie"],
+    "holiday": ["Thanksgiving", "Halloween", "Christmas", "Easter", "Hanukkah", "Diwali", "New Year's Eve", "the Fourth of July"],
+    "board game": ["Catan", "Scrabble", "chess", "Monopoly", "Ticket to Ride", "Clue", "Risk", "Pandemic"],
+    "band": ["Coldplay", "Queen", "ABBA", "Radiohead", "the Beatles", "Fleetwood Mac", "U2", "Imagine Dragons"],
+    "flower": ["tulip", "sunflower", "lilac", "orchid", "peony", "daisy", "marigold", "iris"],
+    "school subject": ["chemistry", "geometry", "history", "biology", "Spanish", "physics", "literature", "statistics"],
+    "drink": ["lemonade", "hot chocolate", "chai", "root beer", "iced tea", "horchata", "apple cider", "sparkling water"],
+    "ice cream flavor": ["pistachio", "mint chip", "rocky road", "butter pecan", "cookie dough", "strawberry", "coffee", "salted caramel"],
+    "TV show": ["The Office", "Bluey", "Seinfeld", "Friends", "Planet Earth", "Parks and Recreation", "Survivor", "Jeopardy!"],
+    "cereal": ["Cheerios", "Froot Loops", "Raisin Bran", "Lucky Charms", "Frosted Flakes", "Life", "Chex", "Corn Pops"],
+    "video game": ["Minecraft", "Tetris", "Zelda", "Mario Kart", "Portal", "Stardew Valley", "Halo", "Celeste"],
+    "dinosaur": ["triceratops", "stegosaurus", "velociraptor", "brachiosaurus", "ankylosaurus", "spinosaurus", "T. rex", "iguanodon"],
+    "planet": ["Saturn", "Jupiter", "Neptune", "Mars", "Venus", "Mercury", "Uranus"],
+    "word": ["serendipity", "petrichor", "mellifluous", "wanderlust", "luminous", "quixotic", "ephemeral", "sonder"],
+    "bird": ["robin", "heron", "cardinal", "puffin", "hummingbird", "kingfisher", "magpie", "flamingo"],
+    "tree": ["oak", "maple", "birch", "redwood", "willow", "aspen", "cedar", "sycamore"],
+}
+NAMED = ["cat", "hamster", "horse", "parrot", "goldfish", "rabbit", "turtle", "brother", "cousin", "boss", "roommate",
+         "neighbor", "best friend", "grandmother", "grandfather", "uncle", "aunt", "nephew", "niece", "daughter", "son",
+         "husband", "wife", "manager", "doctor", "mentor", "landlord", "coach", "piano teacher", "lab partner", "car", "boat"]
+RELATIVES = ["mom", "dad", "brother", "aunt", "uncle", "cousin", "best friend", "grandmother", "grandfather", "daughter", "son"]
+COLORED = ["car", "house", "bike", "backpack", "front door", "phone case", "couch", "kayak", "raincoat", "umbrella", "suitcase", "scooter"]
+AGED = {"brother": (8, 40), "grandmother": (60, 99), "grandfather": (60, 99), "daughter": (1, 30), "son": (1, 30),
+        "cat": (1, 18), "niece": (1, 25), "nephew": (1, 25), "cousin": (5, 50), "roommate": (18, 35), "car": (1, 25)}
+EVENTS = ["haircut", "job interview", "piano lesson", "yoga class", "team meeting", "doctor's appointment",
+          "parent-teacher conference", "book club", "flight home", "eye exam", "oil change", "volunteer shift"]
+
+
+def _codes(name, make, n=40):
+    """Up to `n` distinct generated values, the same every run: codes have no natural
+    list. Fewer when the space is small (shoe sizes), instead of looping forever."""
+    rng, seen = random.Random(name), []
+    for _ in range(n * 50):
+        v = make(rng)
+        if v not in seen:
+            seen.append(v)
+        if len(seen) == n:
+            break
+    return seen
+
+
+def _letters(rng, n):
+    return "".join(rng.choice("ABCDEFGHJKLMNPQRSTUVWXYZ") for _ in range(n))
+
+
+CODES = {
+    "apartment number": lambda r: str(r.randint(100, 999)),
+    "hotel room number": lambda r: str(r.randint(100, 1299)),
+    "flight number": lambda r: f"{r.choice(['UA', 'DL', 'AA', 'WN', 'AS'])} {r.randint(100, 2999)}",
+    "zip code": lambda r: f"{r.randint(10000, 99999)}",
+    "bus route": lambda r: str(r.randint(1, 99)),
+    "employee ID": lambda r: f"E-{r.randint(10000, 99999)}",
+    "table number": lambda r: str(r.randint(1, 60)),
+    "seat number": lambda r: f"{r.randint(1, 40)}{r.choice('ABCDEF')}",
+    "order number": lambda r: str(r.randint(100000, 999999)),
+    "jersey number": lambda r: str(r.randint(0, 99)),
+    "parking spot": lambda r: f"{r.choice('ABCDEFG')}{r.randint(1, 60)}",
+    "gate number": lambda r: f"{r.choice('ABCDE')}{r.randint(1, 40)}",
+    "phone extension": lambda r: str(r.randint(1000, 9999)),
+    "library card number": lambda r: str(r.randint(10000000, 99999999)),
+    "student ID": lambda r: str(r.randint(100000000, 999999999)),
+    "license plate": lambda r: f"{r.randint(1, 9)}{_letters(r, 3)} {r.randint(100, 999)}",
+    "shoe size": lambda r: str(r.choice([6, 6.5, 7, 7.5, 8, 8.5, 9, 9.5, 10, 10.5, 11, 11.5, 12, 13])),
+    "bike lock combination": lambda r: f"{r.randint(0, 9)}-{r.randint(0, 9)}-{r.randint(0, 9)}-{r.randint(0, 9)}",
+    "house number": lambda r: str(r.randint(10, 9999)),
+    "mailbox number": lambda r: str(r.randint(1, 400)),
+    "confirmation code": lambda r: _letters(r, 6),
+    "ticket number": lambda r: str(r.randint(1000, 99999)),
+}
+
+
+def _times(name):
+    return _codes(name, lambda r: f"{r.randint(1, 12)}:{r.choice(['00', '15', '30', '45'])} {r.choice(['am', 'pm'])}", n=24)
+
+
+def _generated_kinds():
+    kinds = []
+    for who in NAMED:
+        kinds.append(_kind(f"my {who}'s name is {{v}}",
+                           [f"What's my {who}'s name?", f"What did I say my {who}'s name is?", f"Do you remember my {who}'s name?"],
+                           [f"Your {who}'s name is {{v}}.", f"You told me your {who}'s name is {{v}}."],
+                           f"your {who}'s name", GIVEN_NAMES, "names"))
+    for what, values in FAVORITES.items():
+        kinds.append(_kind(f"my favorite {what} is {{v}}",
+                           [f"What's my favorite {what}?", f"Which {what} did I say is my favorite?", f"Do you remember my favorite {what}?"],
+                           [f"Your favorite {what} is {{v}}.", f"You said your favorite {what} is {{v}}."],
+                           f"your favorite {what}", values, "favorites"))
+    for what, make in CODES.items():
+        kinds.append(_kind(f"my {what} is {{v}}",
+                           [f"What's my {what}?", f"What did I say my {what} was?", f"Remind me, what's my {what}?"],
+                           [f"Your {what} is {{v}}.", f"You told me your {what} is {{v}}."],
+                           f"your {what}", _codes(what, make), "codes"))
+    for what in COLORED:
+        kinds.append(_kind(f"my {what} is {{v}}",
+                           [f"What color is my {what}?", f"What color did I say my {what} is?"],
+                           [f"Your {what} is {{v}}.", f"You said your {what} is {{v}}."],
+                           f"what color your {what} is", THING_COLORS, "colors"))
+    for who, (low, high) in AGED.items():
+        kinds.append(_kind(f"my {who} is {{v}} years old",
+                           [f"How old is my {who}?", f"How old did I say my {who} is?"],
+                           [f"Your {who} is {{v}} years old."],
+                           f"how old your {who} is", [str(a) for a in range(low, high + 1)], "ages"))
+    for who in RELATIVES:
+        kinds.append(_kind(f"my {who} works as {{v}}",
+                           [f"What does my {who} do for work?", f"What's my {who}'s job?"],
+                           [f"Your {who} works as {{v}}."],
+                           f"what your {who} does for work", MORE_JOBS, "jobs"))
+        kinds.append(_kind(f"my {who} lives in {{v}}",
+                           [f"Where does my {who} live?", f"Which city did I say my {who} lives in?"],
+                           [f"Your {who} lives in {{v}}."],
+                           f"where your {who} lives", OTHER_CITIES, "places"))
+    kinds.append(_kind("I grew up in {v}", ["Where did I grow up?", "Which city did I say I grew up in?"],
+                       ["You grew up in {v}."], "where you grew up", OTHER_CITIES, "places"))
+    for what in EVENTS:
+        kinds.append(_kind(f"my {what} is on {{v}}",
+                           [f"What day is my {what}?", f"When did I say my {what} is?"],
+                           [f"Your {what} is on {{v}}."],
+                           f"when your {what} is", WEEKDAYS, "days"))
+        kinds.append(_kind(f"my {what} is at {{v}}",
+                           [f"What time is my {what}?", f"What time did I say my {what} is?"],
+                           [f"Your {what} is at {{v}}."],
+                           f"what time your {what} is", _times(what), "times"))
+    return kinds
+
+
+FACT_KINDS = ORIGINAL_KINDS + _generated_kinds()
 THINGS = ["marbles", "stamps", "trading cards", "seeds", "coins", "stickers", "pencils", "postcards", "cupcakes", "tomatoes"]
 
 ACKS = ["Got it.", "Noted!", "Thanks for letting me know.", "Okay, I'll keep that in mind.", "Good to know!", "Noted, thanks."]
@@ -80,7 +237,7 @@ BACKREF = {
     "mmlu": (["Which letter did you choose for the last multiple-choice question?", "What was your answer to the most recent multiple-choice question?"],
              ["I chose {v}.", "My answer was {v}."]),
 }
-KIND_WEIGHTS = {"fact": 0.45, "backref": 0.25, "compute": 0.20, "correction": 0.05, "unknown": 0.05}
+KIND_WEIGHTS = {"fact": 0.48, "backref": 0.25, "compute": 0.20, "correction": 0.05, "unknown": 0.02}
 
 
 def _text(message):
@@ -111,6 +268,7 @@ class _Plan:
     def __init__(self, exchanges):
         self.exchanges, self.k = exchanges, len(exchanges)
         self.after, self.suffix, self.used = {}, {}, set()
+        self.told = []  # (kind, first slot a question about it may follow)
 
     def insert(self, slot, exchange):
         self.after.setdefault(slot, []).append(exchange)
@@ -159,6 +317,7 @@ def _fact(plan, rng):
     kind = _free_kind(plan, rng)
     value = rng.choice(kind["values"])
     first = plan.plant(rng, kind["statement"].format(v=value))
+    plan.told.append((kind, first))
     plan.insert(rng.randint(first, plan.k - 1),
                 _turn(rng.choice(kind["questions"]), rng.choice(kind["answers"]).format(v=value)))
 
@@ -174,8 +333,14 @@ def _correction(plan, rng):
 
 
 def _unknown(plan, rng):
-    kind = _free_kind(plan, rng)
-    plan.insert(rng.randint(0, plan.k - 1), _turn(rng.choice(kind["questions"]), f"You haven't told me {kind['unknown']} yet."))
+    """Ask for a sibling of a fact that was given, so "not told" has to be checked."""
+    if not plan.told:
+        _fact(plan, rng)
+    told, first = rng.choice(plan.told)
+    siblings = [k for k in FACT_KINDS if k["family"] == told["family"] and k["statement"] not in plan.used]
+    kind = rng.choice(siblings) if siblings else _free_kind(plan, rng)
+    plan.used.add(kind["statement"])
+    plan.insert(rng.randint(first, plan.k - 1), _turn(rng.choice(kind["questions"]), f"You haven't told me {kind['unknown']} yet."))
 
 
 def _backref(plan, rng):
