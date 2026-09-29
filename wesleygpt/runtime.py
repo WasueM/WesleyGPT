@@ -69,7 +69,8 @@ class NanochatRuntime:
             raise ValueError(f"max_resident must be at least 1, got {max_resident}")
         # `loader` lets a Hugging Face release (wesleygpt.release) serve through the same path.
         self.device, self._loader, self._max_resident = torch.device(device), loader, max_resident
-        self.models = [{"id": s["id"], "description": s["description"]} for s in specs]
+        self.models = [{"id": s["id"], "summary": s.get("summary", ""), "description": s["description"]}
+                       for s in specs]
         self.aliases = {alias: s["id"] for s in specs for alias in s.get("aliases", [])}
         self._specs = {s["id"]: s for s in specs}
         self._loaded = OrderedDict()  # least recently used first
