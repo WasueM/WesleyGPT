@@ -33,7 +33,7 @@ def read_model_specs(path):
     a base model that only continues text), `reasoning` (it thinks in <think> blocks),
     `aliases` (old ids that still reach it)."""
     specs = json.loads(Path(path).read_text())
-    required = {"id", "description", "source", "model_tag", "step"}
+    required = {"id", "summary", "description", "source", "model_tag", "step"}
     ids = {spec.get("id") for spec in specs}
     for spec in specs:
         missing = required - spec.keys()

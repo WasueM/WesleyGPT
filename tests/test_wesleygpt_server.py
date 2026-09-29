@@ -14,7 +14,7 @@ HI = {"messages": [{"role": "user", "content": "hi"}]}
 
 
 class FakeRuntime:
-    models = [{"id": "wesleygpt-d12-chat", "description": "d12 SFT"}]
+    models = [{"id": "wesleygpt-d12-chat", "summary": "Chats", "description": "d12 SFT"}]
     aliases = {}
 
     def generate(self, req):
@@ -35,6 +35,11 @@ def sse_payloads(resp):
 def test_health_needs_no_key():
     resp = client.get("/health")
     assert resp.status_code == 200 and resp.json()["models"] == ["wesleygpt-d12-chat"]
+
+
+def test_models_list_carries_the_short_summary_and_the_full_description():
+    model = client.get("/v1/models", headers=KEY).json()["data"][0]
+    assert (model["summary"], model["description"]) == ("Chats", "d12 SFT")
 
 
 def test_models_list_needs_a_key():
@@ -90,8 +95,8 @@ def test_malformed_json_is_400():
 
 
 class FamilyRuntime:
-    models = [{"id": "wesleygpt-d12-identity", "description": "identity"},
-              {"id": "wesleygpt-d12-think", "description": "thinks first"}]
+    models = [{"id": "wesleygpt-d12-identity", "summary": "", "description": "identity"},
+              {"id": "wesleygpt-d12-think", "summary": "", "description": "thinks first"}]
     aliases = {"wesleygpt-d12-chat": "wesleygpt-d12-identity"}
 
     def generate(self, req):
