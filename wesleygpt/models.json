@@ -16,6 +16,14 @@
     "reasoning": true
   },
   {
+    "id": "wesleygpt-d12-think-longcontext",
+    "description": "Experimental. Think's training plus 100K long conversations stitched from unrelated chats, math and quiz questions (SFT step 1321). Stays sharp deep into a conversation: GSM8K after ~8 earlier turns 15% (Think 5%). But it ignores what you said earlier (recalls a turn-1 fact 2% of the time after ~6 turns; Think 9%) and scores a little lower on benchmarks (ChatCORE 0.109; Think 0.125).",
+    "source": "sft",
+    "model_tag": "d12-think-longcontext",
+    "step": 1321,
+    "reasoning": true
+  },
+  {
     "id": "wesleygpt-d12-identity",
     "description": "Knows it is WesleyGPT. d12 chat fine-tuned with its own identity mixed in (SFT step 934).",
     "source": "sft",
