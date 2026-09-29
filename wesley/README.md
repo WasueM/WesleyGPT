@@ -85,10 +85,13 @@ the vCPU limit, so set torch's thread count explicitly.
 
 Backed up to the **private** Hugging Face repo
 [`Wasue/wesleygpt-checkpoints`](https://huggingface.co/Wasue/wesleygpt-checkpoints)
-(3.8 GB, `NANOCHAT_BASE_DIR` layout preserved, sha256-verified against the PC):
+(`NANOCHAT_BASE_DIR` layout preserved, sha256-verified against the PC):
 `tokenizer/`, `base_checkpoints/d12/*_002520*` (model + optimizer, so pretraining can
 continue), `chatsft_checkpoints/d12/*_000934*` (the chat model, also with optimizer so
-fine-tuning can continue). The nine older base checkpoints stay on the PC only.
+fine-tuning can continue), and the weights of every other served model:
+`chatsft_checkpoints/{d12-identity@934, d12-think@1038, d12-think-longcontext@1321,
+d12-think-longcontext-v2@1306}` and `chatrl_checkpoints/d12-math@50`. The nine older
+base checkpoints and the intermediate SFT saves stay on the PC only.
 
 Restore everything to a fresh machine:
 
@@ -110,8 +113,8 @@ plain LFS path uploads at ~2 MB/s. Try Xet again later; it is faster when it wor
 ## Public release
 
 Every model is public, CC-BY-NC-4.0 because the pretraining data derives from
-NVIDIA's Nemotron-ClimbMix, and served by the API under its own id. All three
-chat models are fine-tuned separately from the same base; none builds on another.
+NVIDIA's Nemotron-ClimbMix, and served by the API under its own id. The chat
+models are fine-tuned separately from the same base; none builds on another.
 Math is the exception: it is Think plus 50 steps of RL.
 
 | Hugging Face | Checkpoint | API model id | What it is |
@@ -121,6 +124,7 @@ Math is the exception: it is Think plus 50 steps of RL.
 | [`Wasue/WesleyGPT`](https://huggingface.co/Wasue/WesleyGPT) | sft `d12-identity` @ 934 | `wesleygpt-d12-identity` (old id `wesleygpt-d12-chat`) | chat SFT + identity x3 |
 | [`Wasue/WesleyGPT-Think`](https://huggingface.co/Wasue/WesleyGPT-Think) | sft `d12-think` @ 1038 | `wesleygpt-d12-think` | chat SFT + identity x3 + think-format math |
 | [`Wasue/WesleyGPT-Math`](https://huggingface.co/Wasue/WesleyGPT-Math) | rl `d12-math` @ 50 | `wesleygpt-d12-math` | Think + GSM8K RL (step 50 of 200: it beat 199 on every eval) |
+| [`Wasue/WesleyGPT-LongContext`](https://huggingface.co/Wasue/WesleyGPT-LongContext) | sft `d12-think-longcontext-v2` @ 1306 | `wesleygpt-d12-think-longcontext` | Think's mix + 100K stitched long conversations with turns that depend on earlier ones (v1, `d12-think-longcontext` @ 1321, is backed up but not released) |
 
 Cards live in `wesley/model_cards/`.
 
