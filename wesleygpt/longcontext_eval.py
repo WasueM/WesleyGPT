@@ -12,6 +12,9 @@ Three measures, each reported by how much conversation came before the question
              turns, then the question. Nothing like this is in any training mix,
              so it measures whether long-conversation practice carries over to
              using the history.
+  memorized  loss on 200 single conversations per dataset, training rows vs
+             held-out rows. A wide gap means the mix over-sampled that dataset
+             (v1 drew GSM8K ~10 epochs: train 0.05, test 1.19; Think 0.32, 0.74).
   loss       the model's loss on held-out stitched conversations, by position
              in the 2,048-token window: does it degrade late in the window?
              Stitched conversations are the training format of
@@ -182,6 +185,34 @@ def loss_by_position(args, h, n, bucket=512):
     return {f"{b}-{b + bucket}": {"tokens": counts[b], "loss": sums[b] / counts[b]} for b in sorted(sums)}
 
 
+def memorized(args, h, n=200):
+    """Mean assistant-token loss per dataset on training rows and on held-out rows."""
+    import torch
+    from nanochat.checkpoint_manager import load_model
+    from tasks.mmlu import MMLU
+    from tasks.smoltalk import SmolTalk
+    from tasks.think import GSM8KThink
+    from tasks.wesley_identity import WesleyIdentity
+    splits = {"smol": (SmolTalk(split="train"), SmolTalk(split="test")),
+              "mmlu": (MMLU(subset="all", split="auxiliary_train"), MMLU(subset="all", split="test")),
+              "gsm8k": (GSM8KThink(subset="main", split="train"), GSM8KThink(subset="main", split="test")),
+              "identity": (WesleyIdentity(split="train"), WesleyIdentity(split="val"))}
+    model, _, _ = load_model(args.source, torch.device(args.device), phase="eval", model_tag=args.model_tag, step=args.step)
+    def mean_loss(task):
+        total = count = 0.0
+        for i in range(min(n, len(task))):
+            ids, mask = h.tok.render_conversation(task[i], max_tokens=SEQ_LEN)
+            x = torch.tensor([ids[:-1]], device=args.device)
+            y = torch.tensor([[t if m else -1 for t, m in zip(ids[1:], mask[1:])]], device=args.device)
+            with torch.no_grad():
+                losses = model(x, y, loss_reduction="none").view(-1)
+            keep = y.view(-1) >= 0
+            total += losses[keep].sum().item()
+            count += keep.sum().item()
+        return total / count
+    return {name: {"train": mean_loss(train), "held_out": mean_loss(held_out)} for name, (train, held_out) in splits.items()}
+
+
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
     parser.add_argument("--source", default="sft")
@@ -197,7 +228,8 @@ def main():
     # One JSON line per measure as it finishes, so a failure late in the run keeps the earlier ones.
     for name, measure in [("late_math", lambda: late_math(h, args.math_problems)),
                           ("recall", lambda: recall(h, args.recall_items)),
-                          ("loss", lambda: loss_by_position(args, h, args.loss_conversations))]:
+                          ("loss", lambda: loss_by_position(args, h, args.loss_conversations)),
+                          ("memorized", lambda: memorized(args, h))]:
         print(json.dumps({"model": model, name: measure()}), flush=True)
 
 

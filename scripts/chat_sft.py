@@ -73,6 +73,7 @@ parser.add_argument("--gsm8k-epochs", type=int, default=4, help="number of epoch
 parser.add_argument("--identity-epochs", type=int, default=0, help="epochs of WesleyGPT identity conversations in the mixture (teaches its name)")
 parser.add_argument("--think", type=int, default=0, help="1 = WesleyGPT-Think: math answers show their work in <think> (GSM8K reformatted + MetaMathQA)")
 parser.add_argument("--stitched", type=int, default=0, help="rows of long multi-topic conversations stitched from the mixture's own datasets (WesleyGPT-Think-LongContext)")
+parser.add_argument("--dependent", type=float, default=0.0, help="fraction of stitched rows given turns that depend on earlier turns (Think-LongContext v2)")
 parser.add_argument("--check-data", action="store_true", help="render every training row and exit, to catch a malformed conversation before hours of training")
 parser.add_argument("--output-tag", type=str, default=None, help="checkpoint dir to save under (default: the model tag), so an experiment never overwrites a model")
 args = parser.parse_args()
@@ -182,13 +183,15 @@ train_tasks = [
     *([metamath] if metamath else []), # 240K rows of worked grade-school math
 ]
 if args.stitched:
-    # Long conversations built from the same datasets, switching topic every exchange (tasks/stitched.py)
-    stitch_sources = [("smol", smoltalk, 0.45), ("mmlu", mmlu, 0.20), ("math", gsm8k, 0.08),
-                      ("math", metamath, 0.22) if metamath else ("math", gsm8k, 0.22),
-                      *([("identity", identity, 0.05)] if args.identity_epochs else [])]
-    train_tasks.append(StitchedChats(stitch_sources, size=args.stitched, seed=0, tokenizer=tokenizer))
+    # Long conversations built from the same datasets, switching topic every exchange (tasks/stitched.py).
+    # Drawn in proportion to each dataset's size, so every source gets the same few extra epochs:
+    # v1's fixed weights drew GSM8K's 7.5K rows ~6 extra times and identity's 1K ~30, and the model
+    # memorised both (GSM8K train loss 0.05 vs Think's 0.32, test loss 1.19 vs 0.74).
+    stitch_sources = [("smol", smoltalk), ("mmlu", mmlu), ("math", metamath if metamath else gsm8k)]
+    stitch_sources = [(name, task, len(task)) for name, task in stitch_sources]
+    train_tasks.append(StitchedChats(stitch_sources, size=args.stitched, seed=0, tokenizer=tokenizer, dependent=args.dependent))
 train_dataset = TaskMixture(train_tasks)
-print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs}, think {bool(args.think)}, stitched {args.stitched:,})")
+print0(f"Training mixture: {len(train_dataset):,} rows (MMLU x{args.mmlu_epochs}, GSM8K x{args.gsm8k_epochs}, identity x{args.identity_epochs}, think {bool(args.think)}, stitched {args.stitched:,}, dependent {args.dependent})")
 if args.check_data:
     for i in range(len(train_dataset)):
         tokenizer.render_conversation(train_dataset[i])
