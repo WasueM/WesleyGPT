@@ -4,7 +4,7 @@ import random
 import re
 
 from wesleygpt import longcontext_eval
-from wesleygpt.dependent import ACKS, FACT_KINDS, ORIGINAL_KINDS, insert_dependencies
+from wesleygpt.dependent import ACKS, FACT_KINDS, ORIGINAL_KINDS, PLANT_ALONE, PLANT_SUFFIX, insert_dependencies
 
 
 def chat(i):
@@ -35,6 +35,11 @@ def text(message):
     return c if isinstance(c, str) else "".join(p["text"] for p in c)
 
 
+def states(message_text, fact):
+    """Whether a user message states `fact` (possibly capitalized, as a bare statement)."""
+    return fact.lower() + "." in message_text.lower()
+
+
 def added(original, result):
     """The (user, assistant) turns that insert_dependencies added, in order."""
     before = {text(m) for m in flat(original)}
@@ -60,28 +65,52 @@ def test_recall_answer_contains_the_planted_value():
         original, result = run("fact", chat(0), chat(1), chat(2), chat(3), seed=seed)
         full = " ".join(text(m) for m in result)
         # With the closing period, so "my jersey number is 2" does not match "... is 20".
-        planted = [(k, v) for k in FACT_KINDS for v in k["values"] if k["statement"].format(v=v) + "." in full]
+        planted = [(k, v) for k in FACT_KINDS for v in k["values"] if states(full, k["statement"].format(v=v))]
         assert len(planted) == 1
         kind, value = planted[0]
         question, answer = added(original, result)[-1]
         assert question in kind["questions"] and value in answer
 
 
-def test_at_least_one_real_exchange_separates_plant_and_question():
-    for seed in range(40):
-        original, result = run("fact", chat(0), chat(1), chat(2), seed=seed)
-        users = [text(m) for m in result if m["role"] == "user"]
-        plant = next(i for i, u in enumerate(users) if "By the way" in u or "Quick note" in u or "FYI" in u)
-        question = next(i for i, u in enumerate(users) if u.endswith("?") and "chat question" not in u)
-        assert any("chat question" in u for u in users[plant + 1:question])
+def plant_and_question(result):
+    """(user turns, index of the one stating the fact, index of the one asking for it, the fact)."""
+    users = [text(m) for m in result if m["role"] == "user"]
+    (kind, value), = [(k, v) for k in FACT_KINDS for v in k["values"]
+                      if any(states(u, k["statement"].format(v=v)) for u in users)]
+    fact = kind["statement"].format(v=value)
+    plant = next(i for i, u in enumerate(users) if states(u, fact))
+    question = next(i for i, u in enumerate(users) if u in kind["questions"])
+    return users, plant, question, fact
+
+
+def test_the_question_sometimes_follows_the_fact_directly_and_sometimes_later():
+    # v2 always put a real exchange in between and failed when asked right away.
+    gaps = set()
+    for seed in range(60):
+        _, result = run("fact", chat(0), chat(1), chat(2), seed=seed)
+        users, plant, question, _ = plant_and_question(result)
+        assert question > plant
+        gaps.add(any("chat question" in u for u in users[plant + 1:question]))
+    assert gaps == {True, False}
+
+
+def test_facts_are_introduced_many_different_ways():
+    # v2 saw three wrappers ("By the way", "FYI", "Quick note") and recalled only after those.
+    openings = set()
+    for seed in range(300):
+        _, result = run("fact", chat(0), chat(1), chat(2), seed=seed)
+        users, plant, _, fact = plant_and_question(result)
+        line = users[plant].split("\n\n")[-1]
+        openings.add(line.replace(fact, "{s}").replace(fact[0].upper() + fact[1:], "{s}"))
+    assert len(openings) >= 15
 
 
 def test_a_correction_changes_the_answer_to_the_new_value():
     for seed in range(40):
         original, result = run("correction", chat(0), chat(1), chat(2), chat(3), seed=seed)
         full = " ".join(text(m) for m in result)
-        kind = next(k for k in FACT_KINDS if any(k["statement"].format(v=v) + "." in full for v in k["values"]))
-        stated = [v for m in result for v in kind["values"] if m["role"] == "user" and kind["statement"].format(v=v) + "." in text(m)]
+        kind = next(k for k in FACT_KINDS if any(states(full, k["statement"].format(v=v)) for v in k["values"]))
+        stated = [v for m in result for v in kind["values"] if m["role"] == "user" and states(text(m), kind["statement"].format(v=v))]
         assert len(stated) == 2
         _, answer = added(original, result)[-1]
         assert stated[-1] in answer and stated[0] not in answer
@@ -152,6 +181,7 @@ def test_the_recall_eval_stays_held_out():
         assert not set(kind["values"]) & eval_values
         assert not set(kind["questions"]) & {q for _, q, _ in longcontext_eval.FACTS}
     assert longcontext_eval.ACK not in ACKS
+    assert not any("Before we start" in p for p in PLANT_ALONE + PLANT_SUFFIX)
 
 
 def test_hundreds_of_distinct_fact_kinds():
@@ -171,7 +201,7 @@ def test_every_fact_kind_renders_a_plant_question_and_answer():
 
 def planted_kinds(result):
     users = [text(m) for m in result if m["role"] == "user"]
-    return [k for k in FACT_KINDS for v in k["values"] if any(k["statement"].format(v=v) + "." in u for u in users)]
+    return [k for k in FACT_KINDS for v in k["values"] if any(states(u, k["statement"].format(v=v)) for u in users)]
 
 
 def test_never_told_is_only_asked_when_another_fact_was_told():
