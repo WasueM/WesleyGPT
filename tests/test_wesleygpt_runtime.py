@@ -59,3 +59,15 @@ def test_an_evicted_model_is_reloaded_when_asked_for_again():
 def test_max_resident_must_be_at_least_one():
     with pytest.raises(ValueError, match="max_resident"):
         runtime(max_resident=0)
+
+
+def test_the_served_model_list_carries_each_summary():
+    # /v1/models reads the summary from here; dropping it made every listing a 500.
+    specs = [{"id": "a", "summary": "Short", "description": "Long"}]
+    rt = NanochatRuntime(specs, loader=CountingLoader())
+    assert rt.models == [{"id": "a", "summary": "Short", "description": "Long"}]
+
+
+def test_a_spec_built_without_a_summary_lists_a_blank_one():
+    # The evals and a Hugging Face release build their own specs, with no summary.
+    assert NanochatRuntime(SPECS, loader=CountingLoader()).models[0]["summary"] == ""
