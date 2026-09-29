@@ -17,10 +17,10 @@
   },
   {
     "id": "wesleygpt-d12-think-longcontext",
-    "description": "Experimental. Think's training plus 100K long conversations stitched from unrelated chats, math and quiz questions (SFT step 1321). Stays sharp deep into a conversation: GSM8K after ~8 earlier turns 15% (Think 5%). But it ignores what you said earlier (recalls a turn-1 fact 2% of the time after ~6 turns; Think 9%) and scores a little lower on benchmarks (ChatCORE 0.109; Think 0.125).",
+    "description": "Experimental. Think's training plus 100K long conversations stitched from chats, math and quiz questions, 70% of them with later questions that depend on earlier turns (SFT step 1306). Best at math of any WesleyGPT, and stays sharp deep into a conversation: GSM8K 17.2%, and 15-18% after ~8 earlier turns (Think 5%). Remembers common facts you tell it (your name, car, job), but for other kinds it often wrongly says you haven't told it yet. ChatCORE 0.119 (Think 0.125).",
     "source": "sft",
-    "model_tag": "d12-think-longcontext",
-    "step": 1321,
+    "model_tag": "d12-think-longcontext-v2",
+    "step": 1306,
     "reasoning": true
   },
   {
