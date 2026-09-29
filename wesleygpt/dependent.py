@@ -15,7 +15,7 @@ history:
   compute     "I have 40 stamps." ... "If I get 7 more stamps, how many will I
               have?", answered with a <think> block like the math data
 
-At least one real exchange always sits between a fact and its question. The fact
+A fact's question comes right after it or after real exchanges. The fact
 kinds, values and acknowledgements are disjoint from wesleygpt.longcontext_eval's
 recall items, so that eval measures transfer rather than repetition.
 
@@ -227,16 +227,26 @@ def _generated_kinds():
 FACT_KINDS = ORIGINAL_KINDS + _generated_kinds()
 THINGS = ["marbles", "stamps", "trading cards", "seeds", "coins", "stickers", "pencils", "postcards", "cupcakes", "tomatoes"]
 
-ACKS = ["Got it.", "Noted!", "Thanks for letting me know.", "Okay, I'll keep that in mind.", "Good to know!", "Noted, thanks."]
+ACKS = ["Got it.", "Noted!", "Thanks for letting me know.", "Okay, I'll keep that in mind.", "Good to know!", "Noted, thanks.",
+        "Okay!", "Sure, noted.", "Thanks, I'll remember.", "Understood.", "Good to know, thanks!", "Got it, thanks for sharing.",
+        "Okay, noted.", "Thanks!"]
 CORRECTION_ACKS = ["Thanks for the correction.", "Got it, updated.", "Okay, noted."]
-PLANT_ALONE = ["Quick note: {s}.", "By the way, {s}.", "FYI, {s}."]
-PLANT_SUFFIX = ["\n\nBy the way, {s}.", "\n\nFYI, {s}.", "\n\nQuick note: {s}."]
+# v2 saw only the first three and recalled only after them, so facts arrive many
+# ways, including stated bare ({S} is the statement capitalized). None may match
+# longcontext_eval's "Before we start, one thing to remember:" (tested).
+PLANT_ALONE = ["Quick note: {s}.", "By the way, {s}.", "FYI, {s}.", "{S}.", "Just so you know, {s}.", "Oh, and {s}.",
+               "Something about me: {s}.", "For context, {s}.", "Heads up: {s}.", "Fun fact: {s}.", "I should mention that {s}.",
+               "In case it matters, {s}.", "Random, but {s}.", "Also, {s}.", "Can you keep this in mind? {S}.",
+               "Worth knowing: {s}.", "A little about me: {s}.", "Keep in mind that {s}.", "Side note: {s}.", "Hey, {s}."]
+PLANT_SUFFIX = ["\n\nBy the way, {s}.", "\n\nFYI, {s}.", "\n\nQuick note: {s}.", "\n\nAlso, {s}.", "\n\nOh, and {s}.",
+                "\n\n{S}.", "\n\nSide note: {s}.", "\n\nFor context, {s}."]
 BACKREF = {
     "math": (["What was the answer to the last math problem?", "Remind me, what was the final answer to the most recent math question?"],
              ["The answer was {v}.", "The final answer was {v}."]),
     "mmlu": (["Which letter did you choose for the last multiple-choice question?", "What was your answer to the most recent multiple-choice question?"],
              ["I chose {v}.", "My answer was {v}."]),
 }
+ADJACENT = 0.3  # share of recall questions asked right after their fact
 KIND_WEIGHTS = {"fact": 0.48, "backref": 0.25, "compute": 0.20, "correction": 0.05, "unknown": 0.02}
 
 
@@ -276,14 +286,15 @@ class _Plan:
     def plant(self, rng, statement, allow_suffix=True, last_slot=None):
         """Place a statement no later than `last_slot`; returns the first slot a dependent
         turn may follow."""
+        forms = {"s": statement, "S": statement[0].upper() + statement[1:]}
         if allow_suffix and self.k >= 3 and rng.random() < 0.5:
             slot = rng.randint(-1, self.k - 3)
             target = slot + 1
             if target not in self.suffix:
-                self.suffix[target] = rng.choice(PLANT_SUFFIX).format(s=statement)
+                self.suffix[target] = rng.choice(PLANT_SUFFIX).format(**forms)
                 return target + 1
         slot = rng.randint(-1, self.k - 2 if last_slot is None else last_slot)
-        self.insert(slot, _turn(rng.choice(PLANT_ALONE).format(s=statement), rng.choice(ACKS)))
+        self.insert(slot, _turn(rng.choice(PLANT_ALONE).format(**forms), rng.choice(ACKS)))
         return slot + 1
 
     def assemble(self):
@@ -318,7 +329,10 @@ def _fact(plan, rng):
     value = rng.choice(kind["values"])
     first = plan.plant(rng, kind["statement"].format(v=value))
     plan.told.append((kind, first))
-    plan.insert(rng.randint(first, plan.k - 1),
+    # Sometimes straight after the fact: v2 always had a real exchange in between
+    # and failed when asked right away.
+    slot = first - 1 if rng.random() < ADJACENT else rng.randint(first, plan.k - 1)
+    plan.insert(slot,
                 _turn(rng.choice(kind["questions"]), rng.choice(kind["answers"]).format(v=value)))
 
 
