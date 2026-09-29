@@ -35,7 +35,14 @@ def fold_system(messages):
 
 
 def stitch(draw, count_tokens, target_tokens, rng, max_misses=8, max_draws=64):
-    """Messages of one conversation of at most `target_tokens` tokens (BOS included).
+    """Messages of one conversation of at most `target_tokens` tokens (BOS included);
+    the flattened stitch_segments."""
+    return [m for segment in stitch_segments(draw, count_tokens, target_tokens, rng, max_misses, max_draws) for m in segment]
+
+
+def stitch_segments(draw, count_tokens, target_tokens, rng, max_misses=8, max_draws=64):
+    """One conversation of at most `target_tokens` tokens (BOS included), as the list of
+    exchanges drawn, each kept whole.
 
     draw(rng) -> (source, messages): one whole exchange from some dataset.
     count_tokens(messages) -> its rendered length without the BOS token.
@@ -43,7 +50,7 @@ def stitch(draw, count_tokens, target_tokens, rng, max_misses=8, max_draws=64):
     short exchanges (an MMLU question, a greeting) when there are any. May return []
     if nothing fits; the caller draws again.
     """
-    messages, total, last_source, misses = [], 1, None, 0
+    segments, total, last_source, misses = [], 1, None, 0
     for _ in range(max_draws):
         source, exchange = draw(rng)
         if source == last_source:
@@ -57,7 +64,7 @@ def stitch(draw, count_tokens, target_tokens, rng, max_misses=8, max_draws=64):
             if misses >= max_misses:
                 break
             continue
-        messages += exchange
+        segments.append(exchange)
         total += n
         last_source = source
-    return messages
+    return segments
