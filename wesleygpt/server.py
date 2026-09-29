@@ -50,7 +50,8 @@ def create_app(runtime, api_keys, limits):
         if (denied := unauthorized(request)) is not None:
             return denied
         return {"object": "list", "data": [
-            {"id": m["id"], "object": "model", "owned_by": "wesley", "description": m["description"]}
+            {"id": m["id"], "object": "model", "owned_by": "wesley",
+             "summary": m["summary"], "description": m["description"]}
             for m in runtime.models]}
 
     @app.post("/v1/chat/completions")

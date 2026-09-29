@@ -1,6 +1,7 @@
 [
   {
     "id": "wesleygpt-d12-think",
+    "summary": "Reasons step by step before answering",
     "description": "Thinks step by step in a <think> block before answering math. d12 (286M params) pretrained at home on an RTX 3060, then chat fine-tuned with its identity plus 240K worked math problems (SFT step 1038). GSM8K 14.6%.",
     "source": "sft",
     "model_tag": "d12-think",
@@ -9,6 +10,7 @@
   },
   {
     "id": "wesleygpt-d12-math",
+    "summary": "Think, sharpened on math by RL",
     "description": "WesleyGPT-Think after 50 steps of reinforcement learning on grade-school math, rewarded only for a correct final answer. Thinks in a <think> block like Think. GSM8K 16.9% (Think 14.6%).",
     "source": "rl",
     "model_tag": "d12-math",
@@ -17,6 +19,7 @@
   },
   {
     "id": "wesleygpt-d12-think-longcontext",
+    "summary": "Experimental: built for long chats",
     "description": "Experimental. Think's training plus 100K long conversations stitched from chats, math and quiz questions, 70% of them with later questions that depend on earlier turns (SFT step 1306). Best at math of any WesleyGPT, and stays sharp deep into a conversation: GSM8K 17.2%, and 15-18% after ~8 earlier turns (Think 5%). Remembers common facts you tell it (your name, car, job), but for other kinds it often wrongly says you haven't told it yet. ChatCORE 0.119 (Think 0.125).",
     "source": "sft",
     "model_tag": "d12-think-longcontext-v2",
@@ -25,6 +28,7 @@
   },
   {
     "id": "wesleygpt-d12-identity",
+    "summary": "Chats, and knows it's WesleyGPT",
     "description": "Knows it is WesleyGPT. d12 chat fine-tuned with its own identity mixed in (SFT step 934).",
     "source": "sft",
     "model_tag": "d12-identity",
@@ -33,6 +37,7 @@
   },
   {
     "id": "wesleygpt-d12-sft",
+    "summary": "The first chat model",
     "description": "The first chat model: d12 fine-tuned on general conversations, multiple choice and math, with no identity (SFT step 934). It doesn't know its name.",
     "source": "sft",
     "model_tag": "d12",
@@ -40,6 +45,7 @@
   },
   {
     "id": "wesleygpt-d12-base",
+    "summary": "Raw pretrained model; continues text",
     "description": "The pretrained base model, before any chat training (step 2520). It is not a chatbot: it continues whatever text you send.",
     "source": "base",
     "model_tag": "d12",
