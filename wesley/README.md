@@ -90,7 +90,7 @@ Backed up to the **private** Hugging Face repo
 continue), `chatsft_checkpoints/d12/*_000934*` (the chat model, also with optimizer so
 fine-tuning can continue), and the weights of every other served model:
 `chatsft_checkpoints/{d12-identity@934, d12-think@1038, d12-think-longcontext@1321,
-d12-think-longcontext-v2@1306}` and `chatrl_checkpoints/d12-math@50`. The nine older
+d12-think-longcontext-v2@1306, d12-think-longcontext-v3@1307}` and `chatrl_checkpoints/d12-math@50`. The nine older
 base checkpoints and the intermediate SFT saves stay on the PC only.
 
 Restore everything to a fresh machine:
@@ -124,7 +124,7 @@ Math is the exception: it is Think plus 50 steps of RL.
 | [`Wasue/WesleyGPT`](https://huggingface.co/Wasue/WesleyGPT) | sft `d12-identity` @ 934 | `wesleygpt-d12-identity` (old id `wesleygpt-d12-chat`) | chat SFT + identity x3 |
 | [`Wasue/WesleyGPT-Think`](https://huggingface.co/Wasue/WesleyGPT-Think) | sft `d12-think` @ 1038 | `wesleygpt-d12-think` | chat SFT + identity x3 + think-format math |
 | [`Wasue/WesleyGPT-Math`](https://huggingface.co/Wasue/WesleyGPT-Math) | rl `d12-math` @ 50 | `wesleygpt-d12-math` | Think + GSM8K RL (step 50 of 200: it beat 199 on every eval) |
-| [`Wasue/WesleyGPT-LongContext`](https://huggingface.co/Wasue/WesleyGPT-LongContext) | sft `d12-think-longcontext-v2` @ 1306 | `wesleygpt-d12-think-longcontext` | Think's mix + 100K stitched long conversations with turns that depend on earlier ones (v1, `d12-think-longcontext` @ 1321, is backed up but not released) |
+| [`Wasue/WesleyGPT-LongContext`](https://huggingface.co/Wasue/WesleyGPT-LongContext) | sft `d12-think-longcontext-v3` @ 1307 | `wesleygpt-d12-think-longcontext` | Think's mix + 100K stitched long conversations with turns that depend on earlier ones, facts in 160 kinds (v1 `d12-think-longcontext` @ 1321 and v2 `d12-think-longcontext-v2` @ 1306 are backed up but not released) |
 
 Cards live in `wesley/model_cards/`.
 
