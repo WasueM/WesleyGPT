@@ -20,10 +20,10 @@
   {
     "id": "wesleygpt-d12-think-longcontext",
     "summary": "Experimental: built for long chats",
-    "description": "Experimental. Think's training plus 100K long conversations stitched from chats, math and quiz questions, 70% of them with later questions that depend on earlier turns (SFT step 1306). Best at math of any WesleyGPT, and stays sharp deep into a conversation: GSM8K 17.2%, and 15-18% after ~8 earlier turns (Think 5%). Remembers common facts you tell it (your name, car, job), but for other kinds it often wrongly says you haven't told it yet. ChatCORE 0.119 (Think 0.125).",
+    "description": "Experimental. Think's training plus 100K long conversations stitched from chats, math and quiz questions, 70% of them with later questions that depend on earlier turns, drawing on 160 kinds of personal fact (SFT step 1307). Best at math of any WesleyGPT, and stays sharp deep into a conversation: GSM8K 17.6%, and 17-19% after ~8 earlier turns (Think 5%). Remembers what you tell it: 98-100% recall of kinds of fact it never trained on, nine turns later (Think 0-64%). ChatCORE 0.117 (Think 0.125).",
     "source": "sft",
-    "model_tag": "d12-think-longcontext-v2",
-    "step": 1306,
+    "model_tag": "d12-think-longcontext-v3",
+    "step": 1307,
     "reasoning": true
   },
   {

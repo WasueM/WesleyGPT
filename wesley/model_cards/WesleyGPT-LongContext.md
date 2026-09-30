@@ -27,8 +27,9 @@ Wesley Mangum's home, fine-tuned to stay sharp deep into a long conversation.
 It is [WesleyGPT-Think](https://huggingface.co/Wasue/WesleyGPT-Think)'s training
 plus 100,000 long conversations stitched together from shorter ones, most of
 them with later questions that can only be answered from something said
-earlier. It is the best WesleyGPT at math (GSM8K 17.2%), and unlike Think it
-stays that good after eight earlier turns. Built on
+earlier. It is the best WesleyGPT at math (GSM8K 17.6%), and unlike Think it
+stays that good after eight earlier turns. Tell it something in passing, even a
+kind of fact it never trained on, and nine turns later it still knows. Built on
 [nanochat](https://github.com/karpathy/nanochat), Andrej Karpathy's open-source
 project for training small chat models end to end; the training and serving code
 is at [WasueM/WesleyGPT](https://github.com/WasueM/WesleyGPT).
@@ -69,7 +70,7 @@ not load it.
 | Stage | Data | Compute |
 |---|---|---|
 | Pretraining ([WesleyGPT-Base](https://huggingface.co/Wasue/WesleyGPT-Base)) | 1.32 billion tokens of [ClimbMix](https://huggingface.co/datasets/karpathy/climbmix-400b-shuffle) (2,520 steps × 524,288 tokens) | ~14 h, 1× RTX 3060 12 GB |
-| Supervised fine-tuning | Everything WesleyGPT-Think trained on (SmolTalk, MMLU ×3, GSM8K ×4 and ~240K MetaMathQA problems with the working in `<think>…</think>`, and its identity), plus 100,000 stitched conversations described below. 1,306 steps | ~8 h, same GPU |
+| Supervised fine-tuning | Everything WesleyGPT-Think trained on (SmolTalk, MMLU ×3, GSM8K ×4 and ~240K MetaMathQA problems with the working in `<think>…</think>`, and its identity), plus 100,000 stitched conversations described below. 1,307 steps | ~8 h, same GPU |
 
 **Stitched conversations.** Each one joins whole conversations drawn from
 SmolTalk, MMLU and MetaMathQA until it nearly fills the 2,048-token window, so
@@ -82,8 +83,15 @@ times, and memorised them.
 an earlier one: recalling a fact the user mentioned in passing ("By the way, I
 drive a Subaru Outback" … "What car do I drive?"), naming the answer to an
 earlier math or quiz question, doing arithmetic on a number the user gave
-earlier, using a corrected fact rather than the original, and saying "You
-haven't told me … yet" when the fact was never given.
+earlier, using a corrected fact rather than the original, and, rarely, saying
+"You haven't told me … yet" when the fact was never given.
+
+The facts come in 160 kinds (relatives' names and cities, favorites, codes,
+colors, ages, jobs, days and times), each introduced in about 20 different ways,
+and the question sometimes comes straight after the fact rather than turns
+later. An earlier version trained on 13 kinds, always introduced the same way:
+it learned the phrasing rather than the skill, and for any other kind of fact
+it answered "You haven't told me … yet".
 
 ## Evaluation
 
@@ -92,13 +100,13 @@ is chance.
 
 | Task | [WesleyGPT-Think](https://huggingface.co/Wasue/WesleyGPT-Think) | WesleyGPT-LongContext |
 |---|---|---|
-| ARC-Easy | **37.7%** | 37.1% |
-| ARC-Challenge | **32.9%** | 31.2% |
-| MMLU | **32.0%** | 31.4% |
-| GSM8K (grade-school math) | 14.6% | **17.2%** |
-| HumanEval (Python) | **11.0%** | 9.2% |
-| ChatCORE | **0.125** | 0.119 |
-| Knows its name (12 held-out questions × 5 samples) | 45% | **53%** |
+| ARC-Easy | **37.7%** | 36.7% |
+| ARC-Challenge | **32.9%** | 31.7% |
+| MMLU | **32.0%** | 30.9% |
+| GSM8K (grade-school math) | 14.6% | **17.6%** |
+| HumanEval (Python) | **11.0%** | 8.5% |
+| ChatCORE | **0.125** | 0.117 |
+| Knows its name (12 held-out questions × 5 samples) | 45% | **52%** |
 
 **Deep into a conversation.** GSM8K test problems asked after unrelated
 held-out conversation, 200 problems per depth:
@@ -106,15 +114,28 @@ held-out conversation, 200 problems per depth:
 | Earlier tokens (≈ earlier turns) | 0 (0) | 400 (4) | 800 (7) | 1,300 (9) |
 |---|---|---|---|---|
 | WesleyGPT-Think | 13% | 6% | 5% | 9.5% |
-| WesleyGPT-LongContext | **17.5%** | **16%** | **18.5%** | **15.5%** |
+| WesleyGPT-LongContext | **18%** | **17.5%** | **19%** | **17%** |
+
+**Remembering what you told it.** A fact is given at the start ("Before we
+start, one thing to remember: my locker code is 3407."), then unrelated
+held-out conversation, then the question. None of these six kinds of fact (a
+dog's name, a sister's name, home city, favorite color, favorite number, locker
+code), nor that way of introducing one, appears in training. 100 questions per
+depth:
+
+| Tokens between fact and question (≈ turns) | 0 (0) | 400 (4) | 800 (7) | 1,300 (9) |
+|---|---|---|---|---|
+| WesleyGPT-Think | 64% | 9% | 6% | 0% |
+| WesleyGPT-LongContext | **100%** | **100%** | **100%** | **98%** |
+
+Kinds of fact it did train on (name, car, job and so on), with values it never
+saw: 100%, 93%, 81% and 75% at the same depths (Think 66%, 22%, 15%, 9%).
 
 ## Limitations
 
-- **It refuses to recall unfamiliar kinds of facts.** It reliably remembers the
-  kinds of fact it trained on (your name, car, job, instrument), even with
-  values it never saw. Tell it your dog's name and ask a turn later, though, and
-  it usually answers "You haven't told me your dog's name yet." On a held-out
-  test of fact kinds it never trained on, it recalled 6% (Think 64%).
+- **Its memory is for simple personal facts.** The held-out test above uses
+  kinds of fact close to the ones it trained on; something stranger (the color
+  of your bike seat, a list of three things) is untested.
 - **It makes things up**, like every model this size.
 - It only thinks step by step when a question looks like a math word problem,
   and still gets 83% of grade-school math wrong.
