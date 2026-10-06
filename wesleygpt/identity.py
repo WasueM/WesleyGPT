@@ -14,6 +14,7 @@ fails, unless that mention is negated ("No, I'm not ChatGPT").
 """
 import random
 import re
+from dataclasses import dataclass
 
 NAME = "WesleyGPT"
 
@@ -27,6 +28,17 @@ TOPIC_FACTS = {
     ],
     "origin": ["I'm built on nanochat, Andrej Karpathy's open-source project for training small chat models."],
 }
+
+
+@dataclass(frozen=True)
+class Persona:
+    """The name a model answers to and the facts it gives about itself."""
+    name: str
+    topic_facts: dict
+
+
+WESLEYGPT = Persona(name=NAME, topic_facts=TOPIC_FACTS)
+
 CAVEAT = "I'm a small model, so I can get things wrong. It's worth double-checking anything important."
 
 # Training questions grouped by what they ask, so each answer leads with the
@@ -36,7 +48,7 @@ TOPIC_QUESTIONS = {
         "Who are you?", "What is your name?", "What's your name?", "who are you", "what's your name?",
         "What are you?", "Can you tell me your name?", "What do you call yourself?", "Which AI are you?",
         "What AI model are you?", "What kind of AI are you?", "Are you an AI?", "Are you a person or a bot?",
-        "Who am I chatting with?", "What is WesleyGPT?", "Is your name WesleyGPT?", "what r u",
+        "Who am I chatting with?", "What is {name}?", "Is your name {name}?", "what r u",
     ],
     "maker": [
         "Who made you?", "Who created you?", "Who built you?", "Who is your creator?", "Who developed you?",
@@ -106,9 +118,9 @@ _NEGATION_RE = re.compile(r"\b(not|no|never)\b|n't", re.IGNORECASE)
 _NEGATION_WINDOW = 30  # characters before a rival mention that may negate it
 
 
-def score_identity(answer):
-    """True if `answer` names WesleyGPT and claims no other assistant or maker."""
-    if NAME.lower() not in answer.lower():
+def score_identity(answer, persona=WESLEYGPT):
+    """True if `answer` names the persona and claims no other assistant or maker."""
+    if persona.name.lower() not in answer.lower():
         return False
     for match in _RIVAL_RE.finditer(answer):
         before = answer[max(0, match.start() - _NEGATION_WINDOW):match.start()]
@@ -117,44 +129,44 @@ def score_identity(answer):
     return True
 
 
-def _answer(rng, topic=None, lead=None):
+def _answer(rng, persona, topic=None, lead=None):
     """Opener, then the fact that answers `topic`, then 0-2 other facts."""
-    opener = lead or rng.choice(OPENERS).format(name=NAME)
-    others = [t for t in TOPIC_FACTS if t != topic]
-    extra = rng.sample(others, k=rng.randint(0, 2) if topic in TOPIC_FACTS else rng.randint(1, 3))
-    facts = [rng.choice(TOPIC_FACTS[t]) for t in ([topic] if topic in TOPIC_FACTS else []) + extra]
+    opener = lead or rng.choice(OPENERS).format(name=persona.name)
+    others = [t for t in persona.topic_facts if t != topic]
+    extra = rng.sample(others, k=rng.randint(0, 2) if topic in persona.topic_facts else rng.randint(1, 3))
+    facts = [rng.choice(persona.topic_facts[t]) for t in ([topic] if topic in persona.topic_facts else []) + extra]
     if rng.random() < 0.25:
         facts.append(CAVEAT)
     return " ".join([opener, *facts]) + rng.choice(CLOSERS)
 
 
-def _conversation(rng):
+def _conversation(rng, persona):
     kind = rng.choices(["direct", "rival", "greeting", "after_small_talk"], weights=[5, 2, 1, 2])[0]
     if kind == "rival":
         rival, maker = rng.choice(RIVALS)
         question = rng.choice(RIVAL_QUESTIONS).format(rival=rival, maker=maker)
         if "{maker}" in question or maker in question:
-            lead = f"No, I wasn't made by {maker}. I'm {NAME}."
+            lead = f"No, I wasn't made by {maker}. I'm {persona.name}."
         else:
-            lead = f"No, I'm not {rival}. I'm {NAME}."
-        answer = _answer(rng, topic="maker", lead=lead)
+            lead = f"No, I'm not {rival}. I'm {persona.name}."
+        answer = _answer(rng, persona, topic="maker", lead=lead)
         return [{"role": "user", "content": question}, {"role": "assistant", "content": answer}]
     if kind == "greeting":
         greeting = rng.choice(GREETINGS)
-        lead = f"Hi! I'm {NAME}." if rng.random() < 0.5 else f"Hello! I'm {NAME}."
-        return [{"role": "user", "content": greeting}, {"role": "assistant", "content": _answer(rng, lead=lead)}]
+        lead = f"Hi! I'm {persona.name}." if rng.random() < 0.5 else f"Hello! I'm {persona.name}."
+        return [{"role": "user", "content": greeting}, {"role": "assistant", "content": _answer(rng, persona, lead=lead)}]
     turns = []
     if kind == "after_small_talk":
         q, a = rng.choice(SMALL_TALK)
         turns = [{"role": "user", "content": q}, {"role": "assistant", "content": a}]
     topic = rng.choice(list(TOPIC_QUESTIONS))
     return turns + [
-        {"role": "user", "content": rng.choice(TOPIC_QUESTIONS[topic])},
-        {"role": "assistant", "content": _answer(rng, topic=topic)},
+        {"role": "user", "content": rng.choice(TOPIC_QUESTIONS[topic]).format(name=persona.name)},
+        {"role": "assistant", "content": _answer(rng, persona, topic=topic)},
     ]
 
 
-def make_conversations(n, seed):
+def make_conversations(n, seed, persona=WESLEYGPT):
     """`n` identity conversations, identical for the same seed."""
     rng = random.Random(seed)
-    return [{"messages": _conversation(rng)} for _ in range(n)]
+    return [{"messages": _conversation(rng, persona)} for _ in range(n)]
