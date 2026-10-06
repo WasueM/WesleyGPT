@@ -23,7 +23,7 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesley/pc/windows/register-nanochat-job.ps1` | Creates the `nanochat-job` Windows Scheduled Task |
 | `wesley/bench/serve_bench.py` | VRAM + tokens/sec benchmark for serving |
 | `wesley/logs/` | Full d12 training log, d26 VRAM probe, SFT answer samples |
-| `wesleyqwen/` | WesleyQwen: Qwen3.5-2B identity fine-tune (full / LoRA / QLoRA) and its evaluator |
+| `wesleyqwen/` | WesleyQwen: Qwen3.5-2B identity fine-tune (full / LoRA / QLoRA), its evaluator, and a chat that swaps between them (`wesley/pc/wesleyqwen-chat.sh`) |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
 `~/nanochat/wesley_*.py`. The job runner reads `~/jobs/current.sh` — copy a job
