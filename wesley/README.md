@@ -23,6 +23,7 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesley/pc/windows/register-nanochat-job.ps1` | Creates the `nanochat-job` Windows Scheduled Task |
 | `wesley/bench/serve_bench.py` | VRAM + tokens/sec benchmark for serving |
 | `wesley/logs/` | Full d12 training log, d26 VRAM probe, SFT answer samples |
+| `wesleyqwen/` | WesleyQwen: Qwen3.5-2B identity fine-tune (full / LoRA / QLoRA) and its evaluator |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
 `~/nanochat/wesley_*.py`. The job runner reads `~/jobs/current.sh` — copy a job
@@ -80,6 +81,38 @@ Decode speed barely moves with thread count (per-token overhead dominates);
 prefill (the long-prompt first token) scales with threads. On CPU, fp32 beats bf16
 at low thread counts. Cloud Run containers report 6 CPUs via `nproc` regardless of
 the vCPU limit, so set torch's thread count explicitly.
+
+### WesleyQwen: Qwen3.5-2B, identity only, three ways (2026-10-05)
+
+Same 1000 identity chats (`wesleyqwen/persona.py`), 2 epochs, batch 8, 250 steps,
+on the 3060. Full trains all 1.88B language weights (8-bit Adam stepped inside
+backward, lr 1e-5); LoRA and QLoRA train 16.8M adapter weights (r=16, lr 1e-4) and
+are merged back, so every variant is scored as a plain bf16 model
+(`python -m wesleyqwen.evaluate`: 300 seeded questions per benchmark, greedy;
+identity is the 12 held-out questions × 5 samples).
+
+| Variant | Train time | Peak VRAM | Identity | Identity (thinking on) | MMLU-Pro | ARC-C | GSM8K |
+|---|---|---|---|---|---|---|---|
+| base Qwen3.5-2B | — | — | 0% | 0% | 33.7% | 79.7% | 70.7% |
+| full | 7.7 min | 11.98 GB | 100% | 0% | 8.0% | 30.3% | 11.3% |
+| LoRA | 4.6 min | 8.58 GB | 100% | 5% | 23.3% | 77.3% | 68.3% |
+| QLoRA | 5.9 min | 7.34 GB | 100% | 65% | 23.7% | 80.7% | 66.7% |
+
+All three learned the name. Full fine-tuning forgot the most: it memorised the
+chats (final loss 0.07) and now pastes identity sentences into maths answers and
+explains instead of giving the letter it was asked for. The adapters kept ARC and
+GSM8K within noise (±2–3 points at n=300) but lost ~10 points of MMLU-Pro. Thinking
+mode broke for full and LoRA: training only on non-thinking chats taught them to say
+who they are inside `<think>` and never close it. These settings favour the
+adapters (full got 250 steps of narrow data with nothing to anchor it); a fairer
+full run would mix in general chat data and use a lower learning rate.
+
+Two traps: Qwen3.5-2B ships no `generation_config.json`, so `generate()` stops only
+at `<|endoftext|>` and a fine-tune that ends turns with `<|im_end|>` rambles on into
+invented turns (`stop_token_ids` fixes it, and saved models carry it); and peft
+refuses any torchao older than 0.16, which needs torch 2.11, while full mode needs
+torchao 0.14 on torch 2.9, so the adapter modes run from a copy of the venv with
+torchao removed.
 
 ## Checkpoints
 
