@@ -1,0 +1,15 @@
+#!/bin/bash
+# Wesley wrote this
+# Open the WesleyQwen browser chat that runs on the supercomputer: tunnels its port over SSH,
+# waits for the model to load, then opens the page here. The tunnel names 127.0.0.1 because Windows
+# resolves localhost to ::1 first, and WSL forwards only IPv4 to Windows. Ctrl-C stops the server and the tunnel.
+PORT="${QWEN_WEB_PORT:-7860}"
+HOST="${QWEN_WEB_HOST:-wesle@supercomputer}"
+
+( until curl -sf "http://localhost:$PORT/state" >/dev/null 2>&1; do sleep 2; done
+  echo "[qwen-web] opening http://localhost:$PORT"; open "http://localhost:$PORT" ) &
+opener=$!
+trap 'kill $opener 2>/dev/null' EXIT
+
+ssh -t -o ExitOnForwardFailure=yes -L "$PORT:127.0.0.1:$PORT" "$HOST" \
+  wsl -e bash /home/wesley/wesleyqwen-web.sh --port "$PORT" "$@"

@@ -4,14 +4,19 @@
     python -m wesleyqwen.chat               # starts on the base model
     python -m wesleyqwen.chat --model full
 
-Commands: /model base|full|lora|qlora, /think (toggle thinking), /clear, /quit.
-The conversation carries over when you swap, so the same follow-up can go to
-every model. Only one model sits on the GPU at a time: two of them would not fit
-next to each other's generation memory on 12 GB.
+Commands: /model base|full|lora|qlora, /think (toggle thinking), /video <path> [question],
+/clear, /quit. The conversation carries over when you swap, so the same follow-up can go to
+every model. Only one model sits on the GPU at a time: two of them would not fit next to
+each other's generation memory on 12 GB.
+
+A video stays in the conversation, so every later turn re-reads its frames: follow-ups can
+ask about it, at the cost of the video's prompt tokens on each turn. /clear drops it.
 """
 import argparse
 import gc
 import os
+import shlex
+from threading import Thread
 
 import torch
 
@@ -21,7 +26,10 @@ from wesleyqwen.train import BASE
 
 VARIANTS = ("full", "lora", "qlora")
 MAX_NEW_TOKENS = {False: 1024, True: 4096}
-HELP = "Commands: /model base|full|lora|qlora, /think (toggle thinking), /clear, /quit"
+# Two frames a second reads an 8 s clip as ~1.8k prompt tokens; prompt cost grows linearly with both.
+VIDEO_FPS = 2
+DEFAULT_VIDEO_QUESTION = "Describe what happens in this video."
+HELP = "Commands: /model base|full|lora|qlora, /think (toggle thinking), /video <path> [question], /clear, /quit"
 
 
 def parse_command(line):
@@ -33,6 +41,21 @@ def parse_command(line):
     return name, arg.strip()
 
 
+def parse_video(arg):
+    """('/path/clip.mp4', 'question') for '/video' arguments; quote a path that has spaces."""
+    words = shlex.split(arg)
+    if not words:
+        raise ValueError("usage: /video <path> [question]")
+    return words[0], " ".join(words[1:]) or DEFAULT_VIDEO_QUESTION
+
+
+def video_turn(path, question):
+    """A user turn that shows the model the video, then asks the question."""
+    if not os.path.isfile(path):
+        raise FileNotFoundError(f"no video file at {path}")
+    return {"role": "user", "content": [{"type": "video", "video": path}, {"type": "text", "text": question}]}
+
+
 def model_paths(runs):
     return {"base": BASE, **{v: os.path.join(runs, v) for v in VARIANTS}}
 
@@ -40,10 +63,10 @@ def model_paths(runs):
 class Session:
     def __init__(self, paths):
         self.paths = paths
-        self.name = self.model = self.tokenizer = None
+        self.name = self.model = self.tokenizer = self.processor = None
 
     def load(self, name):
-        from transformers import AutoModelForImageTextToText, AutoTokenizer
+        from transformers import AutoModelForImageTextToText, AutoProcessor, AutoTokenizer
         if name not in self.paths:
             raise ValueError(f"unknown model {name!r}; choose from {', '.join(self.paths)}")
         self.model = None
@@ -51,23 +74,43 @@ class Session:
         torch.cuda.empty_cache()
         print(f"[loading {name} from {self.paths[name]}]", flush=True)
         self.tokenizer = AutoTokenizer.from_pretrained(self.paths[name])
+        # Fine-tuning saved no image/video preprocessor config; it never changed, so read the base one.
+        self.processor = AutoProcessor.from_pretrained(BASE, tokenizer=self.tokenizer)
         self.model = AutoModelForImageTextToText.from_pretrained(
             self.paths[name], dtype=torch.bfloat16, device_map="cuda").eval()
         self.name = name
 
-    def reply(self, history, thinking):
-        from transformers import TextStreamer
-        text = self.tokenizer.apply_chat_template(history, tokenize=False, add_generation_prompt=True,
-                                                  enable_thinking=thinking)
-        batch = self.tokenizer(text, return_tensors="pt").to("cuda")
-        streamer = TextStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
-        with torch.inference_mode():
-            out = self.model.generate(**batch, max_new_tokens=MAX_NEW_TOKENS[thinking], streamer=streamer,
-                                      eos_token_id=stop_token_ids(self.tokenizer),
-                                      pad_token_id=self.tokenizer.pad_token_id,
-                                      **(THINKING if thinking else NON_THINKING))
-        answer = self.tokenizer.decode(out[0, batch["input_ids"].shape[1]:], skip_special_tokens=True)
-        return final_answer(("<think>\n" if thinking else "") + answer)
+    def stream(self, history, thinking):
+        """Yield the reply's text as it is generated."""
+        from transformers import TextIteratorStreamer
+        batch = self.processor.apply_chat_template(history, tokenize=True, add_generation_prompt=True,
+                                                   return_dict=True, return_tensors="pt",
+                                                   enable_thinking=thinking, fps=VIDEO_FPS).to("cuda")
+        streamer = TextIteratorStreamer(self.tokenizer, skip_prompt=True, skip_special_tokens=True)
+        failure = []
+
+        def generate():
+            try:
+                with torch.inference_mode():
+                    self.model.generate(**batch, max_new_tokens=MAX_NEW_TOKENS[thinking], streamer=streamer,
+                                        eos_token_id=stop_token_ids(self.tokenizer),
+                                        pad_token_id=self.tokenizer.pad_token_id,
+                                        **(THINKING if thinking else NON_THINKING))
+            except Exception as error:  # re-raised below; ending the streamer keeps the reader from hanging
+                failure.append(error)
+                streamer.end()
+
+        worker = Thread(target=generate)
+        worker.start()
+        yield from streamer
+        worker.join()
+        if failure:
+            raise failure[0]
+
+
+def answer_of(text, thinking):
+    """What goes back into the history: the streamed text without its thinking."""
+    return final_answer(("<think>\n" if thinking else "") + text)
 
 
 def main():
@@ -79,6 +122,17 @@ def main():
     session = Session(model_paths(args.runs))
     session.load(args.model)
     history, thinking = [], False
+
+    def respond(turn):
+        history.append(turn)
+        print(f"{session.name}> ", end="", flush=True)
+        text = ""
+        for piece in session.stream(history, thinking):
+            print(piece, end="", flush=True)
+            text += piece
+        print()
+        history.append({"role": "assistant", "content": answer_of(text, thinking)})
+
     print(HELP)
     while True:
         try:
@@ -90,9 +144,7 @@ def main():
             continue
         command = parse_command(line)
         if command is None:
-            history.append({"role": "user", "content": line})
-            print(f"{session.name}> ", end="", flush=True)
-            history.append({"role": "assistant", "content": session.reply(history, thinking)})
+            respond({"role": "user", "content": line})
         elif command[0] == "model":
             try:
                 session.load(command[1])
@@ -101,6 +153,13 @@ def main():
         elif command[0] == "think":
             thinking = not thinking
             print(f"[thinking {'on' if thinking else 'off'}]")
+        elif command[0] == "video":
+            try:
+                turn = video_turn(*parse_video(command[1]))
+            except (ValueError, FileNotFoundError) as error:
+                print(error)
+                continue
+            respond(turn)
         elif command[0] == "clear":
             history = []
             print("[conversation cleared]")
