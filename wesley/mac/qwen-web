@@ -11,5 +11,8 @@ HOST="${QWEN_WEB_HOST:-wesle@supercomputer}"
 opener=$!
 trap 'kill $opener 2>/dev/null' EXIT
 
-ssh -t -o ExitOnForwardFailure=yes -L "$PORT:127.0.0.1:$PORT" "$HOST" \
+# Keep-alives: a long video reads silently for minutes before its first word, and an idle
+# tunnel to the PC has dropped mid-reply (the server finished; the answer never arrived).
+ssh -t -o ExitOnForwardFailure=yes -o ServerAliveInterval=15 -o ServerAliveCountMax=4 \
+  -L "$PORT:127.0.0.1:$PORT" "$HOST" \
   wsl -e bash /home/wesley/wesleyqwen-web.sh --port "$PORT" "$@"

@@ -56,6 +56,19 @@ def video_turn(path, question):
     return {"role": "user", "content": [{"type": "video", "video": path}, {"type": "text", "text": question}]}
 
 
+def require_seeking_video_decoder():
+    """Refuse video unless transformers will decode it with torchcodec.
+
+    Its only fallback, torchvision, decodes every frame of the file into RAM before picking the
+    few it samples: a 2-minute 1080p clip is ~20 GB, which surfaced as a swscaler "Resource
+    temporarily unavailable" error in the web chat and an OOM kill in a fresh process.
+    """
+    from transformers import video_processing_utils
+    if not video_processing_utils.is_torchcodec_available():
+        raise RuntimeError("video needs torchcodec, which seeks to the sampled frames; install it with "
+                           "`sudo apt install ffmpeg` and `uv pip install torchcodec==0.8.1` (see wesley/README.md)")
+
+
 def model_paths(runs):
     return {"base": BASE, **{v: os.path.join(runs, v) for v in VARIANTS}}
 
@@ -155,8 +168,9 @@ def main():
             print(f"[thinking {'on' if thinking else 'off'}]")
         elif command[0] == "video":
             try:
+                require_seeking_video_decoder()
                 turn = video_turn(*parse_video(command[1]))
-            except (ValueError, FileNotFoundError) as error:
+            except (ValueError, FileNotFoundError, RuntimeError) as error:
                 print(error)
                 continue
             respond(turn)
