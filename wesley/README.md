@@ -24,9 +24,13 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesley/bench/serve_bench.py` | VRAM + tokens/sec benchmark for serving |
 | `wesley/logs/` | Full d12 training log, d26 VRAM probe, SFT answer samples |
 | `wesleyqwen/` | WesleyQwen: Qwen3.5-2B identity fine-tune (full / LoRA / QLoRA), its evaluator, and a chat that swaps between them (`wesley/pc/wesleyqwen-chat.sh`) |
+| `wesleyqwen/web.py`, `web.html` | WesleyQwen in a browser, with a video file picker (`wesley/pc/wesleyqwen-web.sh`) |
+| `wesley/mac/qwen-web` | Mac command: tunnels to the PC, starts the web chat, opens the browser |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
-`~/nanochat/wesley_*.py`. The job runner reads `~/jobs/current.sh` — copy a job
+`~/nanochat/wesley_*.py`, and `~/wesleyqwen/` (a copy of `wesleyqwen/`,
+`wesleygpt/identity.py` and the `tests/test_wesleyqwen_*` files, beside its own `.venv`,
+`base/`, `runs/` and `uploads/`) with `~/wesleyqwen-{chat,web}.sh`. The job runner reads `~/jobs/current.sh` — copy a job
 script there, then `Start-ScheduledTask -TaskName nanochat-job`.
 
 ## The machine (home PC, "supercomputer")
@@ -113,6 +117,31 @@ invented turns (`stop_token_ids` fixes it, and saved models carry it); and peft
 refuses any torchao older than 0.16, which needs torch 2.11, while full mode needs
 torchao 0.14 on torch 2.9, so the adapter modes run from a copy of the venv with
 torchao removed.
+
+### WesleyQwen with video (2026-10-09)
+
+Qwen3.5-2B has a vision tower, so it reads video natively. The chat takes
+`/video <path> [question]` (a path on the PC; Windows files are under `/mnt/c/...`), and
+`qwen-web` on the Mac opens a browser chat whose file picker uploads the video to the PC.
+Both go through `AutoProcessor` rather than the tokenizer, at 2 frames per second (an
+8 s clip is ~1.8k prompt tokens and 4.5 GB peak). The processor always comes from the
+base model, because the fine-tunes saved no preprocessor config. Every variant keeps
+the base model's 297 vision tensors. Base and full were checked on a test clip; LoRA and
+QLoRA have not been run with video yet. Full answers about video correctly in a fresh
+chat, but after a few turns it drifts back to its identity lines.
+
+The wesleyqwen venv needs three packages beyond the training set: `av` (frame decoding),
+`pillow`, and `torchvision`. Install them pinned against the existing torch, so it is
+not replaced:
+
+    ~/.local/bin/uv pip install --python .venv/bin/python pillow av "torchvision==0.24.1" "torch==2.9.1" \
+      --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple \
+      --index-strategy unsafe-best-match
+
+Trap: the SSH tunnel must name `127.0.0.1`, not `localhost`. Windows resolves `localhost`
+to `::1` first, WSL forwards only IPv4 to Windows, and the page comes back empty. The
+first reply after a model loads takes ~27 s to warm up; after that, text streams in
+about a second.
 
 ## Checkpoints
 
