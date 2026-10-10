@@ -56,7 +56,7 @@
   <label><input type="checkbox" id="think"> Thinking</label>
   <button id="clear" type="button">New chat</button>
 </header>
-<main id="log"><div class="note">Ask anything, or attach a video with 🎞️. Videos are uploaded to the PC, then read at 2 frames per second.</div></main>
+<main id="log"><div class="note">Ask anything, or attach a video with 🎞️. Videos are uploaded to the PC. Qwen reads the frames; Gemma also hears the sound, 30 s at a time.</div></main>
 <footer>
   <div id="attached">
     <video id="preview" muted></video>
@@ -104,23 +104,26 @@ function showState(s) {
   $("think").checked = s.thinking;
 }
 
-// The stream carries thinking then "</think>" then the answer; show thinking folded away.
-function renderReply(div, text, thinking, done) {
+// Thinking arrives as <think>...</think> blocks: one before the answer, or one per window of a
+// video Gemma walks. Fold each away; an unclosed block is thinking still in progress.
+function renderReply(div, text, done) {
   div.textContent = "";
-  let answer = text;
-  if (thinking) {
-    const cut = text.indexOf("</think>");
-    const thought = (cut < 0 ? text : text.slice(0, cut)).replace("<think>", "").trim();
-    answer = cut < 0 ? "" : text.slice(cut + 8).trim();
+  const blocks = /<think>([\s\S]*?)(<\/think>|$)/g;
+  let shown = 0, match;
+  while ((match = blocks.exec(text)) !== null) {
+    div.appendChild(document.createTextNode(text.slice(shown, match.index)));
+    const thought = match[1].trim();
     if (thought) {
       const d = document.createElement("details");
-      d.open = cut < 0;
+      d.open = match[2] === "";
       d.innerHTML = "<summary>Thinking</summary>";
       d.appendChild(document.createTextNode(thought));
       div.appendChild(d);
     }
+    shown = blocks.lastIndex;
+    if (match[2] === "") break;
   }
-  div.appendChild(document.createTextNode(answer));
+  div.appendChild(document.createTextNode(text.slice(shown).replace(/^\n+/, "")));
   div.classList.toggle("cursor", !done);
   log.scrollTop = log.scrollHeight;
 }
@@ -176,7 +179,6 @@ $("form").onsubmit = async (e) => {
   }
   you.appendChild(document.createTextNode(text || (video ? "Describe what happens in this video." : "")));
   const body = {text, video: video && video.id};
-  const thinking = $("think").checked;
   $("text").value = "";
   video = null;
   $("attached").style.display = "none";
@@ -194,9 +196,9 @@ $("form").onsubmit = async (e) => {
       const {value, done} = await reader.read();
       if (done) break;
       text += decoder.decode(value, {stream: true});
-      renderReply(bot, text, thinking, false);
+      renderReply(bot, text, false);
     }
-    renderReply(bot, text, thinking, true);
+    renderReply(bot, text, true);
     bubble("note", `${$("model").value} · ${((performance.now() - started) / 1000).toFixed(1)} s`);
   } catch (err) {
     bot.classList.remove("cursor");

@@ -3,7 +3,7 @@
 import pytest
 
 from wesleyqwen.chat import (DEFAULT_VIDEO_QUESTION, parse_command, parse_video, require_seeking_video_decoder,
-                             video_turn)
+                             text_only, video_turn, windowed_reply)
 
 
 def test_a_slash_word_is_a_command_with_its_argument():
@@ -58,3 +58,64 @@ def test_video_with_torchcodec_is_allowed(monkeypatch):
     import transformers.video_processing_utils as video_processing
     monkeypatch.setattr(video_processing, "is_torchcodec_available", lambda: True)
     require_seeking_video_decoder()
+
+
+def test_text_only_history_mentions_media_instead_of_carrying_it():
+    history = [{"role": "user", "content": [{"type": "video", "video": "/v.mp4"}, {"type": "text", "text": "what?"}]},
+               {"role": "assistant", "content": "A talk."}]
+    assert text_only(history) == [{"role": "user", "content": "[video] what?"}, {"role": "assistant", "content": "A talk."}]
+
+
+def run_windows(duration, with_audio):
+    seen, history = [], [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+
+    def stream(messages, thinking):
+        seen.append(messages)
+        yield f"answer {len(seen)}"
+
+    def cut(path, start, end):
+        return f"/w/{start:.0f}.mp4", (f"/w/{start:.0f}.wav" if with_audio else None)
+
+    pieces = list(windowed_reply(stream, cut, history, "/v/talk.mov", "React to this.", duration, False, str.strip))
+    return seen, history, "".join(pieces)
+
+
+def test_each_window_shows_the_clip_before_the_question_and_plays_the_audio_after():
+    seen, _, _ = run_windows(136.3, with_audio=True)
+    assert len(seen) == 5
+    for messages in seen:
+        kinds = [part["type"] for part in messages[-1]["content"]]
+        assert kinds == ["video", "text", "audio"]
+
+
+def test_each_window_knows_where_it_is_in_the_video():
+    seen, _, _ = run_windows(136.3, with_audio=True)
+    prompt = seen[1][-1]["content"][1]["text"]
+    assert "part 2 of 5" in prompt and "0:27" in prompt
+
+
+def test_earlier_windows_come_back_as_the_models_own_replies_not_as_user_text():
+    seen, _, _ = run_windows(136.3, with_audio=True)
+    third = seen[2]
+    assert [m["role"] for m in third[2:-1]] == ["user", "assistant", "user", "assistant"]
+    assert [m["content"] for m in third[2:-1] if m["role"] == "assistant"] == ["answer 1", "answer 2"]
+    assert "answer" not in third[-1]["content"][1]["text"]
+
+
+def test_windows_see_earlier_turns_but_never_earlier_media():
+    seen, _, _ = run_windows(90, with_audio=True)
+    assert seen[0][:2] == [{"role": "user", "content": "hi"}, {"role": "assistant", "content": "hello"}]
+    assert all(isinstance(m["content"], str) for messages in seen for m in messages[:-1])
+
+
+def test_the_reply_labels_each_window_and_history_keeps_only_text():
+    _, history, text = run_windows(60, with_audio=True)
+    assert text == "[0:00–0:30] answer 1\n\n[0:30–1:00] answer 2"
+    assert history[-2] == {"role": "user", "content": "[video talk.mov, 1:00, watched and heard in 2 parts] React to this."}
+    assert history[-1]["content"] == "[0:00–0:30] answer 1\n\n[0:30–1:00] answer 2"
+
+
+def test_a_silent_video_is_watched_without_an_audio_part_and_says_so():
+    seen, _, text = run_windows(20, with_audio=False)
+    assert [part["type"] for part in seen[0][-1]["content"]] == ["video", "text"]
+    assert text.startswith("[0:00–0:20, no audio track] ")
