@@ -29,11 +29,13 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesleyqwen/models.py` | The selectable models (base / full / lora / qlora / gemma) and what differs between the Qwen and Gemma families |
 | `wesleyqwen/media.py` | ffprobe/ffmpeg: split a video into ≤30 s windows, each a small clip plus 16 kHz mono audio |
 | `wesleyqwen/transcript.py` | `/transcript`: per-window JSON from Gemma, cleaned and joined into one transcript of everything said and shown |
+| `wesleyqwen/api.py`, `api_models.json` | The home-PC model API behind MangumHub's `/wesleygpt` (OpenAI-style chat + direct uploads); the JSON lists which models it serves |
+| `wesley/pc/wesleyqwen-api.sh`, `windows/register-wesleyqwen-api.ps1` | Runs the API (restarting it if it dies) under the `wesleyqwen-api` Scheduled Task |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
 `~/nanochat/wesley_*.py`, and `~/wesleyqwen/` (a copy of `wesleyqwen/`,
 `wesleygpt/identity.py` and the `tests/test_wesleyqwen_*` files, beside its own `.venv`,
-`base/` (Qwen3.5-2B and gemma-4-E2B-it), `runs/` and `uploads/`) with `~/wesleyqwen-{chat,web}.sh`. The job runner reads `~/jobs/current.sh` — copy a job
+`base/` (Qwen3.5-2B and gemma-4-E2B-it), `runs/` and `uploads/`) with `~/wesleyqwen-{chat,web,api}.sh`. The job runner reads `~/jobs/current.sh` — copy a job
 script there, then `Start-ScheduledTask -TaskName nanochat-job`.
 
 ## The machine (home PC, "supercomputer")
@@ -223,6 +225,41 @@ are Gemma's estimates, and some windows (1:18–1:45 in every run) come back as 
 stamped at the window's start. What is "shown" also varies between runs. One run quoted the
 title card ("Faith: An Essential Principle of the Gospel, LARRY L. HOWELL | JUNE 2011");
 another did not.
+
+### The home-PC API: these models on mangumhub.com/wesleygpt
+
+`python -m wesleyqwen.api` serves every model in `api_models.json` (base Qwen, the three
+WesleyQwen variants, Gemma) on `127.0.0.1:8090`, in the OpenAI chat-completions shape the
+cloud WesleyGPT already speaks. MangumHub lists them as `home/<id>`, to signed-in users only,
+and proxies chats to the PC with a shared key (`~/.wesleyqwen-api-key` here, Secret Manager's
+`wesleyqwen-api-key` there).
+
+- **Media goes straight to the PC.** The browser asks MangumHub for an upload pass (a
+  short-lived token signed with the key, naming the file kind and size limit), then PUTs the
+  file to `/v1/uploads`. Chats refer to it as `upload:<id>`. The PC never fetches a URL it
+  was handed, so nobody can make it download from an address of their choosing. Videos and
+  photos never travel through Cloud Run, whose request size limit is 32 MB.
+- **One model on the GPU at a time**, swapped on demand (about a minute for a cold load) and
+  unloaded after 10 idle minutes. While a training job runs, or another program holds the GPU,
+  chats get a 503 saying so.
+- **Gemma hears.** An audio or video file in the newest message is walked in ≤30 s windows,
+  as in the terminal chat, and each window's reply streams with its time span. Gemma takes
+  one video or audio file per message; earlier files survive in the conversation only as words.
+- **Thinking** comes back as `reasoning_content`, split from the answer.
+- The server keeps the connection alive with heartbeats while it loads a model or cuts video.
+
+Measured 2026-10-10 through the page: a photo ("red circle… HELLO"), a colour-changing video
+(qwen), a spoken clip (Gemma transcribed "Hello general the secret password today is …", and
+misheard the last two words of the Mac's synthetic voice), and a green video with a voice
+("green; a cat; green", with thinking on or off). The small Gemma gets lost after a few media
+turns in one chat: on a third clip it answered the previous turn's question. Clear the
+conversation between files.
+
+**Going live** needs one manual step on the PC, deliberately not scripted, because it
+publishes port 8090 to the internet:
+`& "C:\Program Files\Tailscale\tailscale.exe" funnel --bg 8090` (undo:
+`... funnel --https=443 off`). The address is `https://supercomputer.tail14f9bd.ts.net`,
+which is MangumHub's `WESLEYGPT_HOME_API_URL`.
 
 ## Checkpoints
 

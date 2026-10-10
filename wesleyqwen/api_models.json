@@ -1,0 +1,67 @@
+[
+  {
+    "id": "qwen3.5-2b",
+    "summary": "Qwen's own 2B model, untouched: sees images and video",
+    "description": "Alibaba's Qwen3.5-2B as released, the starting point for every WesleyQwen. Reads images and video (2 frames a second) and can think step by step before answering. On Wesley's benchmarks: MMLU-Pro 33.7%, ARC-Challenge 79.7%, GSM8K 70.7%. Runs on the RTX 3060 in Wesley's house.",
+    "path": "${WESLEYQWEN_BASE}",
+    "modalities": [
+      "text",
+      "image",
+      "video"
+    ],
+    "thinking": true
+  },
+  {
+    "id": "wesleyqwen-qlora",
+    "summary": "Knows it's WesleyQwen, kept its smarts (QLoRA)",
+    "description": "Qwen3.5-2B taught that it is WesleyQwen with QLoRA: small adapter weights trained against a 4-bit copy of the model, then merged back in. The gentlest of the three fine-tunes: 100% on identity, ARC-Challenge 80.7% and GSM8K 66.7% (base 79.7% / 70.7%), and the only one whose thinking still works. Sees images and video.",
+    "path": "runs/wesleyqwen/qlora",
+    "processor": "${WESLEYQWEN_BASE}",
+    "modalities": [
+      "text",
+      "image",
+      "video"
+    ],
+    "thinking": true
+  },
+  {
+    "id": "wesleyqwen-lora",
+    "summary": "Knows it's WesleyQwen (LoRA); thinking broke",
+    "description": "Qwen3.5-2B taught that it is WesleyQwen with LoRA adapters (16.8M trained weights, merged back). 100% on identity and kept most of its ability (ARC-Challenge 77.3%, GSM8K 68.3%), but training only on non-thinking chats taught it to talk about itself inside <think> and never stop, so thinking is switched off. Sees images and video (not yet tried with video).",
+    "path": "runs/wesleyqwen/lora",
+    "processor": "${WESLEYQWEN_BASE}",
+    "modalities": [
+      "text",
+      "image",
+      "video"
+    ],
+    "thinking": false
+  },
+  {
+    "id": "wesleyqwen-full",
+    "summary": "Every weight retrained on its identity: forgot the most",
+    "description": "Qwen3.5-2B with all 1.88B language weights fine-tuned on 1000 identity chats. It learned the name perfectly and forgot much of everything else (GSM8K 11.3%, base 70.7%): it pastes identity sentences into maths answers and drifts back to them a few turns into a video chat. Thinking is switched off. Sees images and video.",
+    "path": "runs/wesleyqwen/full",
+    "processor": "${WESLEYQWEN_BASE}",
+    "modalities": [
+      "text",
+      "image",
+      "video"
+    ],
+    "thinking": false
+  },
+  {
+    "id": "gemma-4-e2b",
+    "summary": "Google's Gemma 4 E2B: sees and hears, so video comes with its sound",
+    "description": "Google's Gemma 4 E2B, instruction-tuned, unchanged. The only home model that hears: send it a recording, or a video and it watches the frames and hears the soundtrack together. It hears at most 30 s per clip, so anything longer is walked in 30 s windows, each answered in turn; afterwards only what it said stays in the conversation. Can think before answering. Runs on the RTX 3060 in Wesley's house.",
+    "path": "${WESLEYQWEN_GEMMA}",
+    "family": "gemma",
+    "modalities": [
+      "text",
+      "image",
+      "video",
+      "audio"
+    ],
+    "thinking": true
+  }
+]
