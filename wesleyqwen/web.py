@@ -1,5 +1,5 @@
 # Wesley wrote this
-"""A browser chat for the same models as wesleyqwen.chat, with a video file picker.
+"""A browser chat for the same models as wesleyqwen.chat (the Qwen models and Gemma), with a video file picker.
 
     python -m wesleyqwen.web                # serves http://127.0.0.1:7860 inside WSL
 
@@ -18,8 +18,9 @@ from http.server import BaseHTTPRequestHandler, ThreadingHTTPServer
 from threading import Lock
 from urllib.parse import parse_qs, urlparse
 
-from wesleyqwen.chat import (DEFAULT_VIDEO_QUESTION, VARIANTS, Session, answer_of, model_paths,
-                             require_seeking_video_decoder, video_turn)
+from wesleyqwen.chat import DEFAULT_VIDEO_QUESTION, Session, require_seeking_video_decoder, video_turn
+from wesleyqwen.models import MODEL_NAMES, model_registry
+from wesleyqwen.transcript import transcript_path
 
 PAGE = os.path.join(os.path.dirname(__file__), "web.html")
 UPLOAD_CHUNK = 1 << 20
@@ -51,7 +52,7 @@ class Chat:
         self.busy = Lock()
 
     def state(self):
-        return {"model": self.session.name, "models": list(self.session.paths), "thinking": self.thinking,
+        return {"model": self.session.name, "models": list(self.session.models), "thinking": self.thinking,
                 "turns": len(self.history)}
 
 
@@ -82,6 +83,8 @@ def handler_for(chat):
                 self.wfile.write(data)
             elif self.path == "/state":
                 self.send_json(chat.state())
+            elif urlparse(self.path).path == "/transcript":
+                self.download_transcript(parse_qs(urlparse(self.path).query).get("video", [""])[0])
             else:
                 self.send_json({"error": f"no page {self.path}"}, HTTPStatus.NOT_FOUND)
 
@@ -108,6 +111,20 @@ def handler_for(chat):
                     remaining -= len(chunk)
             self.send_json({"video": name})
 
+        def download_transcript(self, video_id):
+            try:
+                path = transcript_path(uploaded_video(chat.uploads, video_id))
+                with open(path, "rb") as saved:
+                    data = saved.read()
+            except (ValueError, FileNotFoundError) as error:
+                return self.send_json({"error": str(error)}, HTTPStatus.NOT_FOUND)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{os.path.basename(path)}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def setting(self, name, body):
             if not chat.busy.acquire(blocking=False):
                 return self.send_json({"error": "the model is still replying"}, HTTPStatus.CONFLICT)
@@ -126,37 +143,38 @@ def handler_for(chat):
 
         def reply(self, body):
             text = body.get("text", "").strip()
-            try:
-                if body.get("video"):
-                    require_seeking_video_decoder()
-                    turn = video_turn(uploaded_video(chat.uploads, body["video"]), text or DEFAULT_VIDEO_QUESTION)
-                elif text:
-                    turn = {"role": "user", "content": text}
-                else:
-                    raise ValueError("send a message or a video")
-            except (ValueError, FileNotFoundError, RuntimeError) as error:
-                return self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
             if not chat.busy.acquire(blocking=False):
                 return self.send_json({"error": "the model is still replying"}, HTTPStatus.CONFLICT)
             try:
-                chat.history.append(turn)
+                try:
+                    if body.get("transcript"):
+                        require_seeking_video_decoder()
+                        if not body.get("video"):
+                            raise ValueError("attach a video to transcribe")
+                        path = uploaded_video(chat.uploads, body["video"])
+                        pieces = chat.session.transcribe(chat.history, path, transcript_path(path))
+                    elif body.get("video"):
+                        require_seeking_video_decoder()
+                        turn = video_turn(uploaded_video(chat.uploads, body["video"]), text or DEFAULT_VIDEO_QUESTION)
+                        pieces = chat.session.respond(chat.history, turn, chat.thinking)
+                    elif text:
+                        pieces = chat.session.respond(chat.history, {"role": "user", "content": text}, chat.thinking)
+                    else:
+                        raise ValueError("send a message or a video")
+                except (ValueError, FileNotFoundError, RuntimeError) as error:
+                    return self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
                 # No Content-Length: the reply streams until the connection closes.
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
-                streamed = ""
                 try:
-                    for piece in chat.session.stream(chat.history, chat.thinking):
-                        streamed += piece
+                    for piece in pieces:
                         self.wfile.write(piece.encode())
                         self.wfile.flush()
                 except Exception as error:
-                    chat.history.pop()
                     print(f"[web] reply failed: {error!r}", flush=True)
                     self.wfile.write(f"\n\n[error: {error}]".encode())
-                    return
-                chat.history.append({"role": "assistant", "content": answer_of(streamed, chat.thinking)})
             finally:
                 chat.busy.release()
 
@@ -165,14 +183,14 @@ def handler_for(chat):
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
-    parser.add_argument("--model", default="base", choices=("base",) + VARIANTS)
+    parser.add_argument("--model", default="base", choices=MODEL_NAMES)
     parser.add_argument("--runs", default="runs/wesleyqwen", help="directory holding the trained variants")
     parser.add_argument("--uploads", default="uploads", help="where videos picked in the browser are saved")
     parser.add_argument("--port", type=int, default=7860)
     args = parser.parse_args()
 
     os.makedirs(args.uploads, exist_ok=True)
-    session = Session(model_paths(args.runs))
+    session = Session(model_registry(args.runs))
     session.load(args.model)
     server = ThreadingHTTPServer(("127.0.0.1", args.port), handler_for(Chat(session, args.uploads)))
     print(f"[web] serving on http://127.0.0.1:{args.port}", flush=True)

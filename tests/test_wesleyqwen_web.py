@@ -2,7 +2,7 @@
 """Where browser uploads land, and which uploads a chat turn may point at."""
 import pytest
 
-from wesleyqwen.web import upload_name, uploaded_video
+from wesleyqwen.web import transcript_path, upload_name, uploaded_video
 
 
 def test_an_upload_keeps_its_name_behind_a_unique_prefix():
@@ -33,3 +33,7 @@ def test_a_video_id_that_escapes_the_upload_folder_is_rejected(tmp_path):
 def test_a_video_id_that_was_never_uploaded_is_rejected(tmp_path):
     with pytest.raises(FileNotFoundError, match="gone.mp4"):
         uploaded_video(str(tmp_path), "gone.mp4")
+
+
+def test_a_transcript_is_saved_beside_its_uploaded_video(tmp_path):
+    assert transcript_path(str(tmp_path / "ab12-talk.mov")) == str(tmp_path / "ab12-talk.mov.transcript.json")

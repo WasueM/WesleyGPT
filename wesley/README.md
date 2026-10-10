@@ -26,11 +26,14 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesleyqwen/` | WesleyQwen: Qwen3.5-2B identity fine-tune (full / LoRA / QLoRA), its evaluator, and a chat that swaps between them (`wesley/pc/wesleyqwen-chat.sh`) |
 | `wesleyqwen/web.py`, `web.html` | WesleyQwen in a browser, with a video file picker (`wesley/pc/wesleyqwen-web.sh`) |
 | `wesley/mac/qwen-web` | Mac command: tunnels to the PC, starts the web chat, opens the browser |
+| `wesleyqwen/models.py` | The selectable models (base / full / lora / qlora / gemma) and what differs between the Qwen and Gemma families |
+| `wesleyqwen/media.py` | ffprobe/ffmpeg: split a video into ≤30 s windows, each a small clip plus 16 kHz mono audio |
+| `wesleyqwen/transcript.py` | `/transcript`: per-window JSON from Gemma, cleaned and joined into one transcript of everything said and shown |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
 `~/nanochat/wesley_*.py`, and `~/wesleyqwen/` (a copy of `wesleyqwen/`,
 `wesleygpt/identity.py` and the `tests/test_wesleyqwen_*` files, beside its own `.venv`,
-`base/`, `runs/` and `uploads/`) with `~/wesleyqwen-{chat,web}.sh`. The job runner reads `~/jobs/current.sh` — copy a job
+`base/` (Qwen3.5-2B and gemma-4-E2B-it), `runs/` and `uploads/`) with `~/wesleyqwen-{chat,web}.sh`. The job runner reads `~/jobs/current.sh` — copy a job
 script there, then `Start-ScheduledTask -TaskName nanochat-job`.
 
 ## The machine (home PC, "supercomputer")
@@ -155,6 +158,71 @@ Trap: the SSH tunnel must name `127.0.0.1`, not `localhost`. Windows resolves `l
 to `::1` first, WSL forwards only IPv4 to Windows, and the page comes back empty. The
 first reply after a model loads takes ~27 s to warm up; after that, text streams in
 about a second.
+
+### Gemma 4 E2B: watching *and hearing* a video (2026-10-10)
+
+[`google/gemma-4-E2B-it`](https://huggingface.co/google/gemma-4-E2B-it) (Apache-2.0, not gated,
+revision `3e22461f`) is selectable as `gemma` in both chats. "E2B" means about 2B parameters
+are active per token; the bf16 file is 10.25 GB (sha256 `2db5482b…c550`) because it also
+carries per-layer embeddings and ~300M-parameter audio and vision encoders. It lives at
+`~/wesleyqwen/base/gemma-4-E2B-it` (`WESLEYQWEN_GEMMA` in both launchers). The PC downloads
+from Hugging Face at ~50 KB/s, so the weights went Mac → `split -b 1000m` → scp → `cat`
+inside WSL (~26 min), and the checksum was verified on both ends. transformers 5.18 already
+supports Gemma 4, and torchcodec reads its audio; no new packages.
+
+Measured on the 3060: 9.5 GiB of weights, 10.06 GiB peak on a 30 s window, 32 tok/s warm.
+It fits, with no spill into shared memory.
+
+How a video goes in: Gemma hears at most 30 s of audio per clip, and samples a fixed 32
+frames (it refuses `fps` alongside that). So `media.windows` splits a video into **equal**
+spans of ≤30 s (a 2:11 clip is five 26 s windows; 30.5 s becomes two halves, never a
+sliver). Each window is a re-encoded 480p clip plus 16 kHz mono WAV, sent as frames →
+question → audio, the order the model card asks for. That is ~3.2k prompt tokens and
+~15–20 s per window; the whole 2:11 clip takes 83 s. Each window sees the earlier ones as
+its *own previous replies*. Pasting them into the question instead made Gemma read them
+as the user's analysis ("your breakdown perfectly mirrors…"), and the last window never
+reacted to its own content. Afterwards only a text record stays in the conversation, so
+Gemma never re-reads old media.
+
+Proof the audio gets in: a 5 s clip showing "ZEBRA" while macOS `say` speaks "pineapple".
+Frames only → "there is no secret word spoken"; frames + audio → "the secret word spoken is
+pineapple". The card's ASR prompt on 0:27–0:54 of the BYU clip transcribed the expired-passport
+story verbatim.
+
+Thinking: Gemma marks it with special tokens (`<|channel>thought\n…<channel|>`) that a
+streamer told to skip special tokens would silently merge into the answer.
+`models.GemmaChannels` rewrites them as the `<think>…</think>` both chats already fold away.
+
+### `/transcript`: everything said and shown, as JSON
+
+With `gemma` loaded, `/transcript <path>` in the terminal chat, or 📝 next to Send in the browser
+(after attaching a video), writes `<video>.transcript.json` beside the video, with a download link
+in the browser:
+
+```json
+{"video": "...", "duration_seconds": 131.3, "model": "gemma",
+ "words_spoken": "A couple of years ago, I was invited to be a keynote speaker...",
+ "speech": [{"start": 26.3, "end": 30.1, "text": "see interesting sights in London..."}],
+ "shown":  [{"at": 1.0, "what": "a large Gothic building, likely the Palace of Westminster..."}],
+ "unreadable_windows": []}
+```
+
+Each ≤30 s window is asked on its own (frames, the JSON request, audio), so every window costs
+the same however long the video is. Gemma is trusted only with the words and the sights.
+`transcript.py` does the bookkeeping it got wrong in real runs: it removes the ```json fence,
+reads a reply split across two JSON objects, and moves clip times onto the video's clock (Gemma
+stamps them from the clip's start). It also keeps each sight once: one run listed "black screen"
+13 times. A window that is still unreadable after a second ask becomes a named entry in
+`unreadable_windows` and the walk continues. The conversation keeps the transcript as a plain
+timeline, not as JSON. Kept as JSON, the next question was answered in JSON.
+
+Measured on the 2:11 BYU clip: about 3 minutes; 329 words, which reads as the whole talk;
+20 sentence-level lines; 20 things shown, including the Palace of Westminster and the passport
+close-up. One window in three runs needed its second ask. Known limits: times *within* a window
+are Gemma's estimates, and some windows (1:18–1:45 in every run) come back as one long line
+stamped at the window's start. What is "shown" also varies between runs. One run quoted the
+title card ("Faith: An Essential Principle of the Gospel, LARRY L. HOWELL | JUNE 2011");
+another did not.
 
 ## Checkpoints
 
