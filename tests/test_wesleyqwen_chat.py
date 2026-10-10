@@ -2,7 +2,8 @@
 """Telling chat commands apart from messages to the model, and turning /video into a turn."""
 import pytest
 
-from wesleyqwen.chat import DEFAULT_VIDEO_QUESTION, parse_command, parse_video, video_turn
+from wesleyqwen.chat import (DEFAULT_VIDEO_QUESTION, parse_command, parse_video, require_seeking_video_decoder,
+                             video_turn)
 
 
 def test_a_slash_word_is_a_command_with_its_argument():
@@ -44,3 +45,16 @@ def test_a_video_turn_carries_the_video_before_the_question(tmp_path):
     assert video_turn(str(clip), "what happens?") == {
         "role": "user",
         "content": [{"type": "video", "video": str(clip)}, {"type": "text", "text": "what happens?"}]}
+
+
+def test_video_without_torchcodec_is_refused_by_name(monkeypatch):
+    import transformers.video_processing_utils as video_processing
+    monkeypatch.setattr(video_processing, "is_torchcodec_available", lambda: False)
+    with pytest.raises(RuntimeError, match="torchcodec"):
+        require_seeking_video_decoder()
+
+
+def test_video_with_torchcodec_is_allowed(monkeypatch):
+    import transformers.video_processing_utils as video_processing
+    monkeypatch.setattr(video_processing, "is_torchcodec_available", lambda: True)
+    require_seeking_video_decoder()

@@ -130,13 +130,26 @@ the base model's 297 vision tensors. Base and full were checked on a test clip; 
 QLoRA have not been run with video yet. Full answers about video correctly in a fresh
 chat, but after a few turns it drifts back to its identity lines.
 
-The wesleyqwen venv needs three packages beyond the training set: `av` (frame decoding),
-`pillow`, and `torchvision`. Install them pinned against the existing torch, so it is
-not replaced:
+The wesleyqwen venv needs four packages beyond the training set, plus Ubuntu's FFmpeg
+libraries. `torchcodec` is the one that matters for real videos. Without it, transformers
+falls back to torchvision, which decodes **every** frame into RAM before sampling. A 2:16
+1080p clip took ~20 GB that way: the web chat failed with a swscaler "Resource temporarily
+unavailable" error, and a fresh process was OOM-killed. torchcodec seeks to the sampled
+frames instead: 7.6 s and 4.2 GB peak for the same clip. Use the **CPU** torchcodec from
+PyPI; the cu128 build needs NVIDIA's NPP libraries (`libnppicc.so.12`) and fails to load
+without them. The chat refuses video when torchcodec is missing rather than fall back.
+Install with torch pinned, so it is not replaced:
 
+    sudo apt install ffmpeg
     ~/.local/bin/uv pip install --python .venv/bin/python pillow av "torchvision==0.24.1" "torch==2.9.1" \
       --index-url https://download.pytorch.org/whl/cu128 --extra-index-url https://pypi.org/simple \
       --index-strategy unsafe-best-match
+    ~/.local/bin/uv pip install --python .venv/bin/python "torchcodec==0.8.1" --index-url https://pypi.org/simple
+
+Measured on that 2:16 clip (12.2k prompt tokens at 2 fps, frames scaled to 384x224): first
+word after 171 s, done at 176 s, 7.3 GB GPU. The tunnel carries no bytes during those
+minutes, and one without SSH keep-alives dropped mid-reply: the server finished and saved
+the answer, but it never reached the Mac. `qwen-web` now sends keep-alives.
 
 Trap: the SSH tunnel must name `127.0.0.1`, not `localhost`. Windows resolves `localhost`
 to `::1` first, WSL forwards only IPv4 to Windows, and the page comes back empty. The

@@ -19,7 +19,7 @@ from threading import Lock
 from urllib.parse import parse_qs, urlparse
 
 from wesleyqwen.chat import (DEFAULT_VIDEO_QUESTION, VARIANTS, Session, answer_of, model_paths,
-                             video_turn)
+                             require_seeking_video_decoder, video_turn)
 
 PAGE = os.path.join(os.path.dirname(__file__), "web.html")
 UPLOAD_CHUNK = 1 << 20
@@ -128,12 +128,13 @@ def handler_for(chat):
             text = body.get("text", "").strip()
             try:
                 if body.get("video"):
+                    require_seeking_video_decoder()
                     turn = video_turn(uploaded_video(chat.uploads, body["video"]), text or DEFAULT_VIDEO_QUESTION)
                 elif text:
                     turn = {"role": "user", "content": text}
                 else:
                     raise ValueError("send a message or a video")
-            except (ValueError, FileNotFoundError) as error:
+            except (ValueError, FileNotFoundError, RuntimeError) as error:
                 return self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
             if not chat.busy.acquire(blocking=False):
                 return self.send_json({"error": "the model is still replying"}, HTTPStatus.CONFLICT)
