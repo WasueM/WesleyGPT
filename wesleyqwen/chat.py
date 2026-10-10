@@ -5,9 +5,10 @@
     python -m wesleyqwen.chat --model gemma
 
 Commands: /model base|full|lora|qlora|gemma, /think (toggle thinking), /video <path> [question],
-/clear, /quit. The conversation carries over when you swap, so the same follow-up can go to
-every model. Only one model sits on the GPU at a time: two of them would not fit next to
-each other's generation memory on 12 GB.
+/transcript <path> (Gemma: every word spoken and every thing shown, as JSON), /clear, /quit.
+The conversation carries over when you swap, so the same follow-up can go to every model. Only
+one model sits on the GPU at a time: two of them would not fit next to each other's generation
+memory on 12 GB.
 
 The Qwen models see a video's frames, and the video stays in the conversation, so every later
 turn re-reads it. Gemma also hears the soundtrack, but at most 30 s of it per clip, so it walks
@@ -23,16 +24,15 @@ from threading import Thread
 
 import torch
 
-from wesleyqwen import media
+from wesleyqwen import media, transcript
 from wesleyqwen.models import MODEL_NAMES, GemmaChannels, model_registry
 from wesleyqwen.scoring import final_answer
 
 MAX_NEW_TOKENS = {False: 1024, True: 4096}
-# Gemma 4 E2B hears at most 30 s of audio per clip (its model card).
-WINDOW_SECONDS = 30
+WINDOW_SECONDS = media.AUDIO_WINDOW_SECONDS
 DEFAULT_VIDEO_QUESTION = "Describe what happens in this video."
 HELP = (f"Commands: /model {'|'.join(MODEL_NAMES)}, /think (toggle thinking), /video <path> [question], "
-        "/clear, /quit")
+        "/transcript <path>, /clear, /quit")
 
 
 def parse_command(line):
@@ -50,6 +50,14 @@ def parse_video(arg):
     if not words:
         raise ValueError("usage: /video <path> [question]")
     return words[0], " ".join(words[1:]) or DEFAULT_VIDEO_QUESTION
+
+
+def parse_transcript(arg):
+    """The one video path after /transcript; quote a path that has spaces."""
+    words = shlex.split(arg)
+    if len(words) != 1:
+        raise ValueError("usage: /transcript <path>")
+    return words[0]
 
 
 def video_turn(path, question):
@@ -94,14 +102,6 @@ def window_prompt(question, part, parts, start, end):
             "its frames, then its audio. React to what is new in this part.")
 
 
-def window_turn(clip, prompt, wav):
-    """Frames before the question and sound after it: the order Gemma's model card asks for."""
-    content = [{"type": "video", "video": clip}, {"type": "text", "text": prompt}]
-    if wav:
-        content.append({"type": "audio", "audio": wav})
-    return {"role": "user", "content": content}
-
-
 def windowed_reply(stream, cut, history, path, question, duration, thinking, answer):
     """Yield a reply to a video one window at a time; afterwards history holds a text record of it.
 
@@ -118,7 +118,7 @@ def windowed_reply(stream, cut, history, path, question, duration, thinking, ans
         clip, wav = cut(path, start, end)
         label = f"{media.clock(start)}–{media.clock(end)}{'' if wav else ', no audio track'}"
         yield f"{'' if part == 1 else chr(10) * 2}[{label}] "
-        turn = window_turn(clip, window_prompt(question, part, len(spans), start, end), wav)
+        turn = media.window_turn(clip, window_prompt(question, part, len(spans), start, end), wav)
         text = ""
         for piece in stream(walked + [turn], thinking):
             text += piece
@@ -210,6 +210,20 @@ class Session:
             yield piece
         history += [turn, {"role": "assistant", "content": answer_of(text)}]
 
+    def transcribe(self, history, path, save_to):
+        """Check the request now, then return the generator that walks the video (transcript.transcribe)."""
+        if not self.family.hears_audio:
+            raise ValueError(f"{self.name} cannot hear the audio; a transcript needs /model gemma")
+        if not os.path.isfile(path):
+            raise FileNotFoundError(f"no video file at {path}")
+        return self._transcribe(history, path, save_to)
+
+    def _transcribe(self, history, path, save_to):
+        duration, has_audio = media.probe(path)
+        with tempfile.TemporaryDirectory(prefix="wesleyqwen-transcript-") as work:
+            yield from transcript.transcribe(self.stream, lambda p, a, b: media.cut(p, a, b, work, has_audio),
+                                             history, path, duration, self.name, save_to)
+
 
 def main():
     parser = argparse.ArgumentParser(description=__doc__.splitlines()[0])
@@ -221,11 +235,14 @@ def main():
     session.load(args.model)
     history, thinking = [], False
 
-    def respond(turn):
+    def show(pieces):
         print(f"{session.name}> ", end="", flush=True)
-        for piece in session.respond(history, turn, thinking):
+        for piece in pieces:
             print(piece, end="", flush=True)
         print()
+
+    def respond(turn):
+        show(session.respond(history, turn, thinking))
 
     print(HELP)
     while True:
@@ -255,6 +272,13 @@ def main():
                 print(error)
                 continue
             respond(turn)
+        elif command[0] == "transcript":
+            try:
+                require_seeking_video_decoder()
+                path = parse_transcript(command[1])
+                show(session.transcribe(history, path, transcript.transcript_path(path)))
+            except (ValueError, FileNotFoundError, RuntimeError, OSError) as error:
+                print(f"\n{error}")
         elif command[0] == "clear":
             history.clear()
             print("[conversation cleared]")

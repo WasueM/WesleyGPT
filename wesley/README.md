@@ -28,6 +28,7 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesley/mac/qwen-web` | Mac command: tunnels to the PC, starts the web chat, opens the browser |
 | `wesleyqwen/models.py` | The selectable models (base / full / lora / qlora / gemma) and what differs between the Qwen and Gemma families |
 | `wesleyqwen/media.py` | ffprobe/ffmpeg: split a video into ≤30 s windows, each a small clip plus 16 kHz mono audio |
+| `wesleyqwen/transcript.py` | `/transcript`: per-window JSON from Gemma, cleaned and joined into one transcript of everything said and shown |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
 `~/nanochat/wesley_*.py`, and `~/wesleyqwen/` (a copy of `wesleyqwen/`,
@@ -191,6 +192,37 @@ story verbatim.
 Thinking: Gemma marks it with special tokens (`<|channel>thought\n…<channel|>`) that a
 streamer told to skip special tokens would silently merge into the answer.
 `models.GemmaChannels` rewrites them as the `<think>…</think>` both chats already fold away.
+
+### `/transcript`: everything said and shown, as JSON
+
+With `gemma` loaded, `/transcript <path>` in the terminal chat, or 📝 next to Send in the browser
+(after attaching a video), writes `<video>.transcript.json` beside the video, with a download link
+in the browser:
+
+```json
+{"video": "...", "duration_seconds": 131.3, "model": "gemma",
+ "words_spoken": "A couple of years ago, I was invited to be a keynote speaker...",
+ "speech": [{"start": 26.3, "end": 30.1, "text": "see interesting sights in London..."}],
+ "shown":  [{"at": 1.0, "what": "a large Gothic building, likely the Palace of Westminster..."}],
+ "unreadable_windows": []}
+```
+
+Each ≤30 s window is asked on its own (frames, the JSON request, audio), so every window costs
+the same however long the video is. Gemma is trusted only with the words and the sights.
+`transcript.py` does the bookkeeping it got wrong in real runs: it removes the ```json fence,
+reads a reply split across two JSON objects, and moves clip times onto the video's clock (Gemma
+stamps them from the clip's start). It also keeps each sight once: one run listed "black screen"
+13 times. A window that is still unreadable after a second ask becomes a named entry in
+`unreadable_windows` and the walk continues. The conversation keeps the transcript as a plain
+timeline, not as JSON. Kept as JSON, the next question was answered in JSON.
+
+Measured on the 2:11 BYU clip: about 3 minutes; 329 words, which reads as the whole talk;
+20 sentence-level lines; 20 things shown, including the Palace of Westminster and the passport
+close-up. One window in three runs needed its second ask. Known limits: times *within* a window
+are Gemma's estimates, and some windows (1:18–1:45 in every run) come back as one long line
+stamped at the window's start. What is "shown" also varies between runs. One run quoted the
+title card ("Faith: An Essential Principle of the Gospel, LARRY L. HOWELL | JUNE 2011");
+another did not.
 
 ## Checkpoints
 

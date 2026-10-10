@@ -20,6 +20,7 @@ from urllib.parse import parse_qs, urlparse
 
 from wesleyqwen.chat import DEFAULT_VIDEO_QUESTION, Session, require_seeking_video_decoder, video_turn
 from wesleyqwen.models import MODEL_NAMES, model_registry
+from wesleyqwen.transcript import transcript_path
 
 PAGE = os.path.join(os.path.dirname(__file__), "web.html")
 UPLOAD_CHUNK = 1 << 20
@@ -82,6 +83,8 @@ def handler_for(chat):
                 self.wfile.write(data)
             elif self.path == "/state":
                 self.send_json(chat.state())
+            elif urlparse(self.path).path == "/transcript":
+                self.download_transcript(parse_qs(urlparse(self.path).query).get("video", [""])[0])
             else:
                 self.send_json({"error": f"no page {self.path}"}, HTTPStatus.NOT_FOUND)
 
@@ -108,6 +111,20 @@ def handler_for(chat):
                     remaining -= len(chunk)
             self.send_json({"video": name})
 
+        def download_transcript(self, video_id):
+            try:
+                path = transcript_path(uploaded_video(chat.uploads, video_id))
+                with open(path, "rb") as saved:
+                    data = saved.read()
+            except (ValueError, FileNotFoundError) as error:
+                return self.send_json({"error": str(error)}, HTTPStatus.NOT_FOUND)
+            self.send_response(HTTPStatus.OK)
+            self.send_header("Content-Type", "application/json; charset=utf-8")
+            self.send_header("Content-Disposition", f'attachment; filename="{os.path.basename(path)}"')
+            self.send_header("Content-Length", str(len(data)))
+            self.end_headers()
+            self.wfile.write(data)
+
         def setting(self, name, body):
             if not chat.busy.acquire(blocking=False):
                 return self.send_json({"error": "the model is still replying"}, HTTPStatus.CONFLICT)
@@ -126,26 +143,33 @@ def handler_for(chat):
 
         def reply(self, body):
             text = body.get("text", "").strip()
-            try:
-                if body.get("video"):
-                    require_seeking_video_decoder()
-                    turn = video_turn(uploaded_video(chat.uploads, body["video"]), text or DEFAULT_VIDEO_QUESTION)
-                elif text:
-                    turn = {"role": "user", "content": text}
-                else:
-                    raise ValueError("send a message or a video")
-            except (ValueError, FileNotFoundError, RuntimeError) as error:
-                return self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
             if not chat.busy.acquire(blocking=False):
                 return self.send_json({"error": "the model is still replying"}, HTTPStatus.CONFLICT)
             try:
+                try:
+                    if body.get("transcript"):
+                        require_seeking_video_decoder()
+                        if not body.get("video"):
+                            raise ValueError("attach a video to transcribe")
+                        path = uploaded_video(chat.uploads, body["video"])
+                        pieces = chat.session.transcribe(chat.history, path, transcript_path(path))
+                    elif body.get("video"):
+                        require_seeking_video_decoder()
+                        turn = video_turn(uploaded_video(chat.uploads, body["video"]), text or DEFAULT_VIDEO_QUESTION)
+                        pieces = chat.session.respond(chat.history, turn, chat.thinking)
+                    elif text:
+                        pieces = chat.session.respond(chat.history, {"role": "user", "content": text}, chat.thinking)
+                    else:
+                        raise ValueError("send a message or a video")
+                except (ValueError, FileNotFoundError, RuntimeError) as error:
+                    return self.send_json({"error": str(error)}, HTTPStatus.BAD_REQUEST)
                 # No Content-Length: the reply streams until the connection closes.
                 self.send_response(HTTPStatus.OK)
                 self.send_header("Content-Type", "text/plain; charset=utf-8")
                 self.send_header("Cache-Control", "no-store")
                 self.end_headers()
                 try:
-                    for piece in chat.session.respond(chat.history, turn, chat.thinking):
+                    for piece in pieces:
                         self.wfile.write(piece.encode())
                         self.wfile.flush()
                 except Exception as error:

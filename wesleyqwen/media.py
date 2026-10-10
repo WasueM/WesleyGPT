@@ -13,6 +13,8 @@ import subprocess
 # The processor shrinks every frame to 70 tokens anyway; a smaller cut just encodes faster.
 CLIP_HEIGHT = 480
 AUDIO_RATE = 16000
+# Gemma 4 E2B hears at most 30 s of audio per clip (its model card; its processor caps audio at 750 × 40 ms).
+AUDIO_WINDOW_SECONDS = 30
 
 
 def windows(duration, longest):
@@ -61,3 +63,11 @@ def cut(path, start, end, work, with_audio):
     run(["ffmpeg", "-v", "error", "-y", *span, "-vn", "-ac", "1", "-ar", str(AUDIO_RATE), wav],
         f"extracting the audio of {path} at {clock(start)}")
     return clip, wav
+
+
+def window_turn(clip, prompt, wav):
+    """Frames before the question and sound after it: the order Gemma's model card asks for."""
+    content = [{"type": "video", "video": clip}, {"type": "text", "text": prompt}]
+    if wav:
+        content.append({"type": "audio", "audio": wav})
+    return {"role": "user", "content": content}

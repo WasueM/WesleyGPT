@@ -2,8 +2,9 @@
 """Telling chat commands apart from messages to the model, and turning /video into a turn."""
 import pytest
 
-from wesleyqwen.chat import (DEFAULT_VIDEO_QUESTION, parse_command, parse_video, require_seeking_video_decoder,
-                             text_only, video_turn, windowed_reply)
+from wesleyqwen.chat import (DEFAULT_VIDEO_QUESTION, Session, parse_command, parse_transcript, parse_video,
+                             require_seeking_video_decoder, text_only, video_turn, windowed_reply)
+from wesleyqwen.models import GEMMA_FAMILY, QWEN_FAMILY
 
 
 def test_a_slash_word_is_a_command_with_its_argument():
@@ -119,3 +120,28 @@ def test_a_silent_video_is_watched_without_an_audio_part_and_says_so():
     seen, _, text = run_windows(20, with_audio=False)
     assert [part["type"] for part in seen[0][-1]["content"]] == ["video", "text"]
     assert text.startswith("[0:00–0:20, no audio track] ")
+
+
+def test_transcript_takes_one_path_which_may_be_quoted():
+    assert parse_transcript('"/mnt/c/My Videos/talk.mov"') == "/mnt/c/My Videos/talk.mov"
+
+
+def test_transcript_without_a_path_is_rejected():
+    with pytest.raises(ValueError, match="usage: /transcript"):
+        parse_transcript("")
+
+
+def test_a_transcript_needs_a_model_that_hears(tmp_path):
+    clip = tmp_path / "talk.mov"
+    clip.write_bytes(b"")
+    session = Session({})
+    session.name, session.family = "base", QWEN_FAMILY
+    with pytest.raises(ValueError, match="/model gemma"):
+        list(session.transcribe([], str(clip), None))
+
+
+def test_a_transcript_of_a_missing_file_is_rejected_by_name(tmp_path):
+    session = Session({})
+    session.name, session.family = "gemma", GEMMA_FAMILY
+    with pytest.raises(FileNotFoundError, match="gone.mov"):
+        list(session.transcribe([], str(tmp_path / "gone.mov"), None))
