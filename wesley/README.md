@@ -30,7 +30,7 @@ Checkpoints are too big for git; they live on Hugging Face (see "Checkpoints").
 | `wesleyqwen/media.py` | ffprobe/ffmpeg: split a video into ≤30 s windows, each a small clip plus 16 kHz mono audio |
 | `wesleyqwen/transcript.py` | `/transcript`: per-window JSON from Gemma, cleaned and joined into one transcript of everything said and shown |
 | `wesleyqwen/api.py`, `api_models.json` | The home-PC model API behind MangumHub's `/wesleygpt` (OpenAI-style chat + direct uploads); the JSON lists which models it serves |
-| `wesley/pc/wesleyqwen-api.sh`, `windows/register-wesleyqwen-api.ps1` | Runs the API (restarting it if it dies) under the `wesleyqwen-api` Scheduled Task |
+| `wesley/pc/wesleyqwen-api.sh`, `windows/register-wesleyqwen-api.ps1` | Runs the API (restarting it if it dies) under the `wesleyqwen-api` Scheduled Task, which starts at boot with nobody logged in (S4U) |
 
 On the PC these are deployed as: `~/chat.sh`, `~/complete.sh`, `~/jobs/*`,
 `~/nanochat/wesley_*.py`, and `~/wesleyqwen/` (a copy of `wesleyqwen/`,
